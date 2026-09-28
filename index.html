@@ -13,7 +13,7 @@
 <style>
 :root{--bg:#0b1020;--card:#111827;--card2:#172033;--text:#f8fafc;--muted:#94a3b8;--line:#263247;--accent:#7c6cff;--accent2:#28d7aa;--danger:#ff6b81;--rest:#64748b;--leave:#f59e0b;--sick:#ef4444;--training:#06b6d4}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#08101f,#0b1020 30%,#0a1222);color:var(--text);font:15px/1.4 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
-button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;padding:18px 14px calc(100px + env(safe-area-inset-bottom))}
+button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;padding:calc(18px + env(safe-area-inset-top)) 14px calc(100px + env(safe-area-inset-bottom))}
 .top{display:flex;justify-content:space-between;align-items:center;margin:4px 2px 18px}.brand b{font-size:24px;letter-spacing:-.5px}.brand span{display:block;color:var(--muted);font-size:12px}.badge{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:#111827;color:#dbeafe;font-weight:700}
 .card{background:rgba(17,24,39,.92);border:1px solid var(--line);border-radius:20px;box-shadow:0 14px 45px #0003}.period{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;padding:10px;margin-bottom:12px}.period button{border:0;background:transparent;color:var(--text);height:40px;border-radius:12px}.period button:hover{background:#ffffff0a}.period-main{text-align:center}.period-main small{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:10px}.period-main strong{display:block;font-size:16px;margin-top:2px}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.summary .mini{padding:14px}.mini span{color:var(--muted);font-size:11px;text-transform:uppercase}.mini strong{display:block;font-size:20px;margin-top:4px}.positive{color:#4ade80}.negative{color:#fb7185}
@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.05</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
+  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.06</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
   <main id="main"></main>
 </div>
 <nav class="nav">
@@ -54,7 +54,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
   <div class="handle"></div>
   <div class="sheet-head"><div><small style="color:var(--muted)">IMPORT PHOTO</small><h2>Scanner mon planning</h2></div><button class="close" id="closeScanner">✕</button></div>
   <div class="field" style="margin-top:14px"><label>Nom / prénom tel qu'il apparaît sur le planning</label><input id="scanName" placeholder="Ex. CLEMENT"></div>
-  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.05 : scanner local gratuit — plusieurs lectures OCR + sélection automatique du meilleur résultat.</div>
+  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.06 : scanner IA serveur — la photo est analysée par Groq Vision via Cloudflare, puis tu valides les horaires avant import.</div>
   <div class="actions" style="margin-top:12px"><button class="btn primary" id="takePhoto">📷 Prendre une photo</button><button class="btn" id="pickPhoto">🖼️ Importer une photo</button></div>
   <img id="scanPreview" class="scan-preview hidden" alt="Aperçu du planning">
   <div id="scanStatus" class="scan-status">Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.</div>
@@ -144,6 +144,7 @@ function renderSettings(){
 }
 
 var scanDraft=null,scanImageUrl=null;
+var VISION_API='https://myplanning.v76y74m25h.workers.dev/scan';
 function openScanner(){
   scanDraft=null;
   document.getElementById('scanName').value=state.data.settings.ocrEmployeeName||'';
@@ -327,28 +328,111 @@ function makeOcrVariant(dataUrl,mode){
     };im.onerror=function(){resolve(dataUrl)};im.src=dataUrl;
   })
 }
+function compressForVision(dataUrl){
+  return new Promise(function(resolve){
+    var im=new Image();
+    im.onload=function(){
+      var maxDim=2200,scale=Math.min(1,maxDim/Math.max(im.width,im.height));
+      var cv=document.createElement('canvas');
+      cv.width=Math.max(1,Math.round(im.width*scale));cv.height=Math.max(1,Math.round(im.height*scale));
+      var ctx=cv.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+      ctx.drawImage(im,0,0,cv.width,cv.height);
+      resolve(cv.toDataURL('image/jpeg',.9));
+    };
+    im.onerror=function(){resolve(dataUrl)};
+    im.src=dataUrl;
+  });
+}
+function validClock(t){
+  return typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+}
+function visionPlanningToDraft(planning,weekDate){
+  if(!planning||!Array.isArray(planning.days))throw new Error("L'IA a renvoyé un planning incomplet.");
+  var map={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6};
+  var ws=startWeek(fromIso(weekDate)),by={};
+  planning.days.forEach(function(d){
+    var di=map[String(d.day||'').toLowerCase()];
+    if(di===undefined)return;
+    var segs=[];
+    (Array.isArray(d.shifts)?d.shifts:[]).forEach(function(s){
+      if(validClock(s.start)&&validClock(s.end)&&s.start!==s.end){
+        segs.push({id:uid(),start:s.start,end:s.end,breakMinutes:0});
+      }
+    });
+    by[di]=segs;
+  });
+  var draft=[];
+  for(var i=0;i<7;i++)draft.push({date:iso(addDays(ws,i)),day:i,segments:by[i]||[]});
+  return draft;
+}
+async function scanWithServerVision(name,weekDate,imageData){
+  setScanStatus("Envoi sécurisé au scanner IA…",true,15);
+  var prepared=await compressForVision(imageData);
+  setScanStatus("Groq Vision analyse le tableau et cherche "+name+"…",true,45);
+  var controller=new AbortController(),timer=setTimeout(function(){controller.abort()},45000);
+  var r;
+  try{
+    r=await fetch(VISION_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({employee:name,image:prepared}),signal:controller.signal});
+  }finally{clearTimeout(timer)}
+  var data;
+  try{data=await r.json()}catch(e){throw new Error("Le serveur IA a renvoyé une réponse illisible.")}
+  if(!r.ok||!data||!data.ok)throw new Error((data&&data.details)||(data&&data.error)||("Erreur serveur IA ("+r.status+")"));
+  var p=data.planning||{},confidence=Number(p.confidence)||0;
+  if(!p.employee_found&&confidence<40)throw new Error("L'IA n'a pas identifié "+name+" avec assez de certitude.");
+  var draft=visionPlanningToDraft(p,weekDate);
+  var count=draft.reduce(function(n,d){return n+d.segments.length},0);
+  if(!count)throw new Error("L'IA a trouvé la ligne, mais aucun horaire suffisamment lisible.");
+  return {draft:draft,confidence:confidence,employee:p.employee_found||name,warnings:Array.isArray(p.warnings)?p.warnings:[]};
+}
+async function scanPhotoLocalFallback(name,weekDate){
+  setScanStatus("Serveur IA indisponible : tentative OCR locale de secours…",true,5);
+  var variants=await Promise.all([enhanceForOcr(scanImageUrl),makeOcrVariant(scanImageUrl,'contrast'),makeOcrVariant(scanImageUrl,'binary')]);await loadTesseract();
+  var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("OCR de secours : "+Math.round(m.progress*100)+" %",true,8+m.progress*25)}});
+  await worker.setParameters({preserve_interword_spaces:'1'});
+  var draftCandidates=[];
+  for(var vi=0;vi<variants.length;vi++){
+    var rr=await worker.recognize(variants[vi],{}, {text:true,tsv:true});
+    try{
+      var dd=detectFromOcr(rr.data,name,weekDate),segments=dd.reduce(function(n,x){return n+x.segments.length},0),minutes=dd.reduce(function(n,x){return n+x.segments.reduce(function(a,s){return a+segmentM(s)},0)},0);
+      draftCandidates.push({draft:dd,score:ocrScore(rr.data,name)+segments*80+(minutes>0&&minutes<70*60?60:0)});
+    }catch(parseErr){}
+  }
+  await worker.terminate();
+  if(!draftCandidates.length)throw new Error("Le serveur IA et l'OCR local n'ont pas réussi à lire ce planning.");
+  draftCandidates.sort(function(a,b){return b.score-a.score});
+  return draftCandidates[0].draft;
+}
 async function scanPhoto(file){
   var name=document.getElementById('scanName').value.trim(),weekDate=document.getElementById('scanWeekDate').value;
   if(!name){setScanStatus("Entre d'abord ton nom tel qu'il apparaît sur le planning.",false);return}
   if(!weekDate){setScanStatus("Choisis un jour appartenant à la semaine photographiée.",false);return}
   try{
-    scanImageUrl=await fileToDataUrl(file);var img=document.getElementById('scanPreview');img.src=scanImageUrl;img.classList.remove('hidden');
+    scanImageUrl=await fileToDataUrl(file);
+    var img=document.getElementById('scanPreview');img.src=scanImageUrl;img.classList.remove('hidden');
     document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');
-    setScanStatus("Préparation du scanner local gratuit…",true,3);
-    var variants=await Promise.all([enhanceForOcr(scanImageUrl),makeOcrVariant(scanImageUrl,'contrast'),makeOcrVariant(scanImageUrl,'binary')]);await loadTesseract();
-    var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Analyse locale : "+Math.round(m.progress*100)+" %",true,8+m.progress*25)}});
-    await worker.setParameters({preserve_interword_spaces:'1'});
-    var candidates=[],draftCandidates=[];
-    for(var vi=0;vi<variants.length;vi++){
-      setScanStatus("Lecture IA locale "+(vi+1)+"/"+variants.length+"…",true,15+vi*25);
-      var rr=await worker.recognize(variants[vi],{}, {text:true,tsv:true});candidates.push(rr.data);
-      try{var dd=detectFromOcr(rr.data,name,weekDate),segments=dd.reduce(function(n,x){return n+x.segments.length},0),minutes=dd.reduce(function(n,x){return n+x.segments.reduce(function(a,s){return a+segmentM(s)},0)},0);draftCandidates.push({draft:dd,score:ocrScore(rr.data,name)+segments*80+(minutes>0&&minutes<70*60?60:0)})}catch(parseErr){}
+    var serverResult=null,serverError=null;
+    try{
+      serverResult=await scanWithServerVision(name,weekDate,scanImageUrl);
+      scanDraft=serverResult.draft;
+      var msg="Analyse IA terminée";
+      if(serverResult.confidence)msg+=" · confiance "+Math.round(serverResult.confidence)+" %";
+      msg+=". Vérifie les horaires avant l'import.";
+      if(serverResult.warnings.length)msg+=" "+serverResult.warnings.join(" ");
+      setScanStatus(msg,false,100);
+    }catch(e){
+      serverError=e;
+      try{
+        scanDraft=await scanPhotoLocalFallback(name,weekDate);
+        setScanStatus("Groq Vision n'a pas pu terminer ("+(serverError.message||"erreur")+"). Résultat OCR local de secours : vérifie attentivement les horaires.",false,100);
+      }catch(localError){
+        throw new Error((serverError&&serverError.message?serverError.message:"Échec du scanner IA")+" · Secours local : "+(localError.message||"échec"));
+      }
     }
-    await worker.terminate();
-    if(!draftCandidates.length)throw new Error("Les 3 lectures locales ont échoué à isoler tes horaires. Essaie de cadrer uniquement le tableau, sans le mur autour.");
-    draftCandidates.sort(function(a,b){return b.score-a.score});scanDraft=draftCandidates[0].draft;
-    state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Analyse locale terminée. 3 lectures ont été comparées automatiquement. Vérifie les horaires avant l'import.",false,100);
-  }catch(e){scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus(e&&e.message?e.message:"La lecture de la photo a échoué.",false)}
+    state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();
+  }catch(e){
+    scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');
+    setScanStatus(e&&e.name==='AbortError'?"Le serveur IA a mis trop de temps à répondre. Réessaie.":(e&&e.message?e.message:"La lecture de la photo a échoué."),false);
+  }
 }
 function renderScanDraft(){
   var box=document.getElementById('scanResults');box.innerHTML='';
