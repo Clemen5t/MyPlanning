@@ -178,38 +178,83 @@ function parseTsv(tsv){
 }
 function median(a){if(!a.length)return 16;a=a.slice().sort(function(x,y){return x-y});return a[Math.floor(a.length/2)]}
 function detectFromOcr(data,name,weekDate){
-  var words=parseTsv(data.tsv),dayNames=[['lundi','lun'],['mardi','mar'],['mercredi','mer'],['jeudi','jeu'],['vendredi','ven'],['samedi','sam'],['dimanche','dim']];
+  var words=parseTsv(data.tsv),dayNames=[['lundi','lun','lu'],['mardi','mar','ma'],['mercredi','mer','me'],['jeudi','jeu','je'],['vendredi','ven','ve'],['samedi','sam','sa'],['dimanche','dim','di']];
   if(words.length<5)throw new Error("La photo a été lue, mais pas assez de zones ont été reconnues.");
-  var headers=[];
+  var nameParts=String(name).trim().split(/\s+/).map(normWord).filter(Boolean),nameWord=null,best=-1;
+  if(!nameParts.length)throw new Error("Entre ton nom tel qu'il apparaît sur le planning.");
+  words.forEach(function(w){var n=normWord(w.text);if(!n)return;nameParts.forEach(function(p){var score=(n===p?100:(n.length>=4&&p.length>=4&&(n.indexOf(p)>=0||p.indexOf(n)>=0)?72:0))+w.conf/10;if(score>best){best=score;nameWord=w}})});
+  if(!nameWord||best<70)throw new Error("Je n'ai pas trouvé « "+name+" » sur la photo. Vérifie le nom ou reprends une photo plus nette.");
+
+  // 1) Repérer les colonnes de jours si l'OCR arrive à lire les en-têtes.
+  var rawHeaders=[];
   dayNames.forEach(function(names,di){
     var cand=words.filter(function(w){var n=normWord(w.text);return names.some(function(k){return n===k||n.indexOf(k)===0})});
-    if(cand.length){cand.sort(function(a,b){return a.top-b.top||b.conf-a.conf});headers.push({day:di,word:cand[0],x:cand[0].x})}
+    if(cand.length){cand.sort(function(a,b){return a.top-b.top||b.conf-a.conf});rawHeaders.push({day:di,x:cand[0].x,y:cand[0].y,word:cand[0]})}
   });
-  if(headers.length<3)throw new Error("Je n'arrive pas à repérer suffisamment de jours sur la photo. Cadre toute la semaine.");
-  var nk=normWord(name);
-  if(!nk)throw new Error("Entre ton nom tel qu'il apparaît sur le planning.");
-  var nameParts=String(name).trim().split(/\s+/).map(normWord).filter(Boolean),nameWord=null,best=-1;
-  words.forEach(function(w){var n=normWord(w.text);if(!n)return;nameParts.forEach(function(p){var score=(n===p?100:(n.length>=4&&p.length>=4&&(n.indexOf(p)>=0||p.indexOf(n)>=0)?70:0))+w.conf/10;if(score>best){best=score;nameWord=w}})});
-  if(!nameWord||best<70)throw new Error("Je n'ai pas trouvé « "+name+" » sur la photo. Vérifie le nom ou reprends une photo plus nette.");
-  var mh=median(words.map(function(w){return w.height}).filter(function(x){return x>3})),tol=Math.max(28,mh*2.6);
-  var rowWords=words.filter(function(w){return Math.abs(w.y-nameWord.y)<=tol});
-  headers.sort(function(a,b){return a.x-b.x});
+  rawHeaders.sort(function(a,b){return a.x-b.x});
+  var headers=[];
+  rawHeaders.forEach(function(h){if(!headers.some(function(x){return Math.abs(x.x-h.x)<8}))headers.push(h)});
+
+  // 2) Fallback géométrique : les plannings ALDI ont 7 colonnes régulières.
+  // Sur une photo inclinée, Tesseract lit souvent les heures mais pas "Lu/Ma/Me...".
+  var allRight=words.reduce(function(mx,w){return Math.max(mx,w.left+w.width)},0);
+  var dayStart=0,dayEnd=allRight;
+  if(headers.length>=2){
+    var xs=headers.map(function(h){return h.x}).sort(function(a,b){return a-b}),gaps=[];
+    for(var gi=1;gi<xs.length;gi++)gaps.push(xs[gi]-xs[gi-1]);
+    var step=median(gaps.filter(function(x){return x>8}));
+    if(!isFinite(step)||step<8)step=(xs[xs.length-1]-xs[0])/Math.max(1,xs.length-1);
+    dayStart=xs[0]-(headers[0].day)*step-step*.48;
+    dayEnd=dayStart+7*step;
+  }else{
+    // Le nom/prénom se trouve dans les colonnes fixes avant le lundi.
+    // On cherche les tokens horaires situés à droite du nom pour estimer la zone des 7 jours.
+    var timeWords=words.filter(function(w){return timesInText(w.text).length&&w.x>nameWord.x});
+    if(timeWords.length){
+      var minX=Math.min.apply(null,timeWords.map(function(w){return w.x})),maxX=Math.max.apply(null,timeWords.map(function(w){return w.x}));
+      var span=Math.max(140,maxX-minX);
+      dayStart=Math.max(nameWord.x+nameWord.width*.7,minX-span*.18);
+      dayEnd=Math.max(dayStart+span*1.15,allRight);
+    }else{
+      dayStart=Math.max(nameWord.x+nameWord.width,allRight*.30);dayEnd=allRight;
+    }
+  }
+  var colW=(dayEnd-dayStart)/7;
+  if(!isFinite(colW)||colW<12)throw new Error("Je vois ton nom, mais je n'arrive pas à reconstruire les 7 colonnes du planning.");
+
+  // 3) La ligne d'un salarié peut contenir 2 sous-lignes (journée coupée).
+  var mh=median(words.map(function(w){return w.height}).filter(function(x){return x>3}));
+  var rowTol=Math.max(34,mh*4.2);
+  var rowWords=words.filter(function(w){return Math.abs(w.y-nameWord.y)<=rowTol&&w.x>=dayStart-colW*.2&&w.x<=dayEnd+colW*.2});
   var byDay={};for(var d=0;d<7;d++)byDay[d]=[];
   rowWords.forEach(function(w){
     var ts=timesInText(w.text);if(!ts.length)return;
-    var nearest=headers[0],dist=Math.abs(w.x-nearest.x);
-    headers.forEach(function(h){var dd=Math.abs(w.x-h.x);if(dd<dist){dist=dd;nearest=h}});
-    ts.forEach(function(t){byDay[nearest.day].push({time:t,x:w.x,y:w.y})});
+    var di=Math.floor((w.x-dayStart)/colW);di=Math.max(0,Math.min(6,di));
+    ts.forEach(function(t){byDay[di].push({time:t,x:w.x,y:w.y,conf:w.conf})});
   });
+
   var ws=startWeek(fromIso(weekDate)),draft=[];
   for(var di=0;di<7;di++){
-    var arr=byDay[di].sort(function(a,b){return a.x-b.x||a.y-b.y}),times=arr.map(function(x){return x.time});
-    var unique=[];times.forEach(function(t){if(unique[unique.length-1]!==t)unique.push(t)});
-    var segs=[];for(var j=0;j+1<unique.length;j+=2)segs.push({id:uid(),start:unique[j],end:unique[j+1],breakMinutes:0});
+    var arr=byDay[di].sort(function(a,b){return a.y-b.y||a.x-b.x}),lines=[];
+    arr.forEach(function(t){
+      var line=lines.find(function(l){return Math.abs(l.y-t.y)<=Math.max(8,mh*.9)});
+      if(!line){line={y:t.y,times:[]};lines.push(line)}
+      line.times.push(t);
+    });
+    var ordered=[];
+    lines.sort(function(a,b){return a.y-b.y}).forEach(function(line){
+      line.times.sort(function(a,b){return a.x-b.x});
+      line.times.forEach(function(t){if(ordered[ordered.length-1]!==t.time)ordered.push(t.time)});
+    });
+    var segs=[];
+    for(var j=0;j+1<ordered.length;j+=2){
+      var a=minsTime(ordered[j]),b=minsTime(ordered[j+1]);
+      if(ordered[j]!==ordered[j+1]&&((b-a+1440)%1440)<=16*60)segs.push({id:uid(),start:ordered[j],end:ordered[j+1],breakMinutes:0});
+    }
     draft.push({date:iso(addDays(ws,di)),day:di,segments:segs});
   }
   var count=draft.reduce(function(n,x){return n+x.segments.length},0);
-  if(!count)throw new Error("Ton nom est trouvé, mais aucun couple d'horaires fiable n'a été détecté sur sa ligne.");
+  if(!count)throw new Error("J'ai trouvé ton nom et les colonnes, mais pas assez d'horaires fiables. Rapproche-toi du tableau et garde toute ta ligne visible.");
   return draft;
 }
 function loadTesseract(){
