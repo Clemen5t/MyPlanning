@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.04</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
+  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.05</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
   <main id="main"></main>
 </div>
 <nav class="nav">
@@ -54,7 +54,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
   <div class="handle"></div>
   <div class="sheet-head"><div><small style="color:var(--muted)">IMPORT PHOTO</small><h2>Scanner mon planning</h2></div><button class="close" id="closeScanner">✕</button></div>
   <div class="field" style="margin-top:14px"><label>Nom / prénom tel qu'il apparaît sur le planning</label><input id="scanName" placeholder="Ex. CLEMENT"></div>
-  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.04 : lecture adaptée aux tableaux ALDI : les 7 colonnes peuvent être reconstruites même si leurs titres sont mal lus.</div>
+  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.05 : scanner local gratuit — plusieurs lectures OCR + sélection automatique du meilleur résultat.</div>
   <div class="actions" style="margin-top:12px"><button class="btn primary" id="takePhoto">📷 Prendre une photo</button><button class="btn" id="pickPhoto">🖼️ Importer une photo</button></div>
   <img id="scanPreview" class="scan-preview hidden" alt="Aperçu du planning">
   <div id="scanStatus" class="scan-status">Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.</div>
@@ -291,7 +291,14 @@ function detectFromOcr(data,name,weekDate){
 }
 function loadTesseract(){
   if(window.Tesseract)return Promise.resolve();
-  return new Promise(function(resolve,reject){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=function(){reject(new Error("Impossible de charger le moteur de lecture photo."))};document.head.appendChild(s)});
+  return new Promise(function(resolve,reject){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=function(){reject(new Error("Impossible de charger le moteur local de lecture photo."))};document.head.appendChild(s)});
+}
+function ocrScore(data,name){
+  var text=normWord((data&&data.text)||''),parts=String(name||'').split(/\s+/).map(normWord).filter(Boolean),score=0;
+  parts.forEach(function(p){if(text.indexOf(p)>=0)score+=120});
+  var times=timesInText((data&&data.text)||'');score+=times.length*18;
+  if(data&&data.tsv)score+=Math.min(100,(data.tsv.match(/\t/g)||[]).length/20);
+  return score;
 }
 function fileToDataUrl(file){return new Promise(function(resolve,reject){var r=new FileReader();r.onload=function(){resolve(r.result)};r.onerror=reject;r.readAsDataURL(file)})}
 function enhanceForOcr(dataUrl){
@@ -306,6 +313,20 @@ function enhanceForOcr(dataUrl){
     };im.onerror=function(){resolve(dataUrl)};im.src=dataUrl;
   })
 }
+function makeOcrVariant(dataUrl,mode){
+  return new Promise(function(resolve){
+    var im=new Image();im.onload=function(){
+      var scale=Math.min(3.2,Math.max(1.6,2800/im.width)),cv=document.createElement('canvas');cv.width=Math.round(im.width*scale);cv.height=Math.round(im.height*scale);
+      var ctx=cv.getContext('2d');ctx.drawImage(im,0,0,cv.width,cv.height);var id=ctx.getImageData(0,0,cv.width,cv.height),p=id.data;
+      for(var i=0;i<p.length;i+=4){var y=.299*p[i]+.587*p[i+1]+.114*p[i+2],v;
+        if(mode==='binary')v=y<172?0:255;
+        else v=Math.max(0,Math.min(255,(y-128)*1.55+128));
+        p[i]=p[i+1]=p[i+2]=v;
+      }
+      ctx.putImageData(id,0,0);resolve(cv.toDataURL('image/jpeg',.95));
+    };im.onerror=function(){resolve(dataUrl)};im.src=dataUrl;
+  })
+}
 async function scanPhoto(file){
   var name=document.getElementById('scanName').value.trim(),weekDate=document.getElementById('scanWeekDate').value;
   if(!name){setScanStatus("Entre d'abord ton nom tel qu'il apparaît sur le planning.",false);return}
@@ -313,11 +334,20 @@ async function scanPhoto(file){
   try{
     scanImageUrl=await fileToDataUrl(file);var img=document.getElementById('scanPreview');img.src=scanImageUrl;img.classList.remove('hidden');
     document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');
-    setScanStatus("Amélioration de la photo…",true,4);var ocrImage=await enhanceForOcr(scanImageUrl);await loadTesseract();
-    var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Lecture de la photo : "+Math.round(m.progress*100)+" %",true,10+m.progress*80)}});
+    setScanStatus("Préparation du scanner local gratuit…",true,3);
+    var variants=await Promise.all([enhanceForOcr(scanImageUrl),makeOcrVariant(scanImageUrl,'contrast'),makeOcrVariant(scanImageUrl,'binary')]);await loadTesseract();
+    var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Analyse locale : "+Math.round(m.progress*100)+" %",true,8+m.progress*25)}});
     await worker.setParameters({preserve_interword_spaces:'1'});
-    var result=await worker.recognize(ocrImage,{}, {text:true,tsv:true});await worker.terminate();
-    scanDraft=detectFromOcr(result.data,name,weekDate);state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Lecture terminée. Le nom peut être illisible : vérifie impérativement que les horaires affichés sont bien les tiens avant l'import.",false,100);
+    var candidates=[],draftCandidates=[];
+    for(var vi=0;vi<variants.length;vi++){
+      setScanStatus("Lecture IA locale "+(vi+1)+"/"+variants.length+"…",true,15+vi*25);
+      var rr=await worker.recognize(variants[vi],{}, {text:true,tsv:true});candidates.push(rr.data);
+      try{var dd=detectFromOcr(rr.data,name,weekDate),segments=dd.reduce(function(n,x){return n+x.segments.length},0),minutes=dd.reduce(function(n,x){return n+x.segments.reduce(function(a,s){return a+segmentM(s)},0)},0);draftCandidates.push({draft:dd,score:ocrScore(rr.data,name)+segments*80+(minutes>0&&minutes<70*60?60:0)})}catch(parseErr){}
+    }
+    await worker.terminate();
+    if(!draftCandidates.length)throw new Error("Les 3 lectures locales ont échoué à isoler tes horaires. Essaie de cadrer uniquement le tableau, sans le mur autour.");
+    draftCandidates.sort(function(a,b){return b.score-a.score});scanDraft=draftCandidates[0].draft;
+    state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Analyse locale terminée. 3 lectures ont été comparées automatiquement. Vérifie les horaires avant l'import.",false,100);
   }catch(e){scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus(e&&e.message?e.message:"La lecture de la photo a échoué.",false)}
 }
 function renderScanDraft(){
