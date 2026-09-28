@@ -1,3 +1,7 @@
 name = "myplanning"
 main = "worker.js"
 compatibility_date = "2026-09-28"
+keep_vars = true
+
+[secrets]
+required = ["GROQ_API_KEY"]
