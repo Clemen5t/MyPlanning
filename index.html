@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.02</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
+  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.03</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
   <main id="main"></main>
 </div>
 <nav class="nav">
@@ -54,7 +54,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
   <div class="handle"></div>
   <div class="sheet-head"><div><small style="color:var(--muted)">IMPORT PHOTO</small><h2>Scanner mon planning</h2></div><button class="close" id="closeScanner">✕</button></div>
   <div class="field" style="margin-top:14px"><label>Nom / prénom tel qu'il apparaît sur le planning</label><input id="scanName" placeholder="Ex. CLEMENT"></div>
-  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div>
+  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.03 : si le nom est illisible, le scanner essaie maintenant de retrouver ta ligne grâce à sa position et aux horaires.</div>
   <div class="actions" style="margin-top:12px"><button class="btn primary" id="takePhoto">📷 Prendre une photo</button><button class="btn" id="pickPhoto">🖼️ Importer une photo</button></div>
   <img id="scanPreview" class="scan-preview hidden" alt="Aperçu du planning">
   <div id="scanStatus" class="scan-status">Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.</div>
@@ -193,7 +193,12 @@ function detectFromOcr(data,name,weekDate){
     var target=nameParts[0],candidates=words.filter(function(w){var n=normWord(w.text);return n.length>=Math.max(4,target.length-3)&&n.length<=target.length+3&&w.x<(words.reduce(function(mx,z){return Math.max(mx,z.left+z.width)},0)*.45)});
     candidates.forEach(function(w){var n=normWord(w.text),sim=wordSimilarity(n,target),score=sim*100+Math.max(0,w.conf)/30;if(score>best){best=score;nameWord=w}});
   }
-  if(!nameWord||best<52)throw new Error("Le nom est trop petit pour être lu avec certitude. Zoome sur le tableau en gardant ta ligne entière et les 7 jours visibles.");
+  var weakName=!nameWord||best<52;
+  if(weakName){
+    // Ne plus bloquer l'import uniquement parce que le nom est minuscule.
+    // On cherchera une ligne plausible contenant des horaires sur les 7 colonnes.
+    nameWord=null;
+  }
 
   // 1) Repérer les colonnes de jours si l'OCR arrive à lire les en-têtes.
   var rawHeaders=[];
@@ -219,14 +224,14 @@ function detectFromOcr(data,name,weekDate){
   }else{
     // Le nom/prénom se trouve dans les colonnes fixes avant le lundi.
     // On cherche les tokens horaires situés à droite du nom pour estimer la zone des 7 jours.
-    var timeWords=words.filter(function(w){return timesInText(w.text).length&&w.x>nameWord.x});
+    var timeWords=words.filter(function(w){return timesInText(w.text).length&&(nameWord? w.x>nameWord.x : w.x>allRight*.28)});
     if(timeWords.length){
       var minX=Math.min.apply(null,timeWords.map(function(w){return w.x})),maxX=Math.max.apply(null,timeWords.map(function(w){return w.x}));
-      var leftGuess=Math.max(nameWord.x+Math.max(24,nameWord.width),minX-Math.max(20,(maxX-minX)*.10));
+      var leftGuess=Math.max(nameWord?(nameWord.x+Math.max(24,nameWord.width)):allRight*.30,minX-Math.max(20,(maxX-minX)*.10));
       dayStart=Math.min(allRight*.48,leftGuess);
       dayEnd=allRight;
     }else{
-      dayStart=Math.max(nameWord.x+nameWord.width,allRight*.30);dayEnd=allRight;
+      dayStart=Math.max(nameWord?(nameWord.x+nameWord.width):0,allRight*.30);dayEnd=allRight;
     }
   }
   var colW=(dayEnd-dayStart)/7;
@@ -234,8 +239,22 @@ function detectFromOcr(data,name,weekDate){
 
   // 3) La ligne d'un salarié peut contenir 2 sous-lignes (journée coupée).
   var mh=median(words.map(function(w){return w.height}).filter(function(x){return x>3}));
-  var rowTol=Math.max(34,mh*4.2);
-  var rowWords=words.filter(function(w){return Math.abs(w.y-nameWord.y)<=rowTol&&w.x>=dayStart-colW*.2&&w.x<=dayEnd+colW*.2});
+  var rowTol=Math.max(34,mh*4.2),anchorY=nameWord?nameWord.y:null;
+  if(anchorY===null){
+    // Regrouper les tokens horaires par bande horizontale et choisir la bande
+    // qui ressemble le plus à une ligne salarié (plusieurs jours / plusieurs horaires).
+    var tw=words.filter(function(w){return timesInText(w.text).length&&w.x>=dayStart-colW*.2&&w.x<=dayEnd+colW*.2}),bands=[];
+    tw.sort(function(a,b){return a.y-b.y}).forEach(function(w){
+      var b=bands.find(function(x){return Math.abs(x.y-w.y)<=Math.max(10,mh*1.4)});
+      if(!b){b={y:w.y,items:[],xs:[]};bands.push(b)}
+      b.items.push(w);b.xs.push(w.x);b.y=b.items.reduce(function(n,z){return n+z.y},0)/b.items.length;
+    });
+    bands.forEach(function(b){var cols={};b.items.forEach(function(w){cols[Math.max(0,Math.min(6,Math.floor((w.x-dayStart)/colW)))]=1});b.score=Object.keys(cols).length*20+b.items.length*5});
+    bands.sort(function(a,b){return b.score-a.score});
+    if(!bands.length||bands[0].score<25)throw new Error("Je lis la photo, mais je n'arrive pas à isoler une ligne salarié contenant des horaires.");
+    anchorY=bands[0].y;
+  }
+  var rowWords=words.filter(function(w){return Math.abs(w.y-anchorY)<=rowTol&&w.x>=dayStart-colW*.2&&w.x<=dayEnd+colW*.2});
   var byDay={};for(var d=0;d<7;d++)byDay[d]=[];
   rowWords.forEach(function(w){
     var ts=timesInText(w.text);if(!ts.length)return;
@@ -295,7 +314,7 @@ async function scanPhoto(file){
     var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Lecture de la photo : "+Math.round(m.progress*100)+" %",true,10+m.progress*80)}});
     await worker.setParameters({preserve_interword_spaces:'1'});
     var result=await worker.recognize(ocrImage,{}, {text:true,tsv:true});await worker.terminate();
-    scanDraft=detectFromOcr(result.data,name,weekDate);state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Lecture terminée. Vérifie chaque horaire avant l'import.",false,100);
+    scanDraft=detectFromOcr(result.data,name,weekDate);state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Lecture terminée. Le nom peut être illisible : vérifie impérativement que les horaires affichés sont bien les tiens avant l'import.",false,100);
   }catch(e){scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus(e&&e.message?e.message:"La lecture de la photo a échoué.",false)}
 }
 function renderScanDraft(){
