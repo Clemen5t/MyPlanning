@@ -24,6 +24,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 .settings{padding:16px;display:grid;gap:14px}.field{display:grid;gap:6px}.field label{color:var(--muted);font-size:12px}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);background:#0c1424;color:var(--text);border-radius:12px;padding:11px 12px;outline:none}.field input:focus,.field textarea:focus{border-color:#6c63ff}.actions{display:flex;flex-wrap:wrap;gap:8px}.btn{border:1px solid var(--line);background:#182239;color:var(--text);border-radius:12px;padding:10px 13px;font-weight:800}.btn.primary{background:linear-gradient(135deg,#6c63ff,#775cff);border-color:#7f75ff}.btn.danger{background:#3a1720;border-color:#7a2f3e;color:#fecdd3}
 .nav{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:20;width:min(720px,calc(100% - 24px));display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:7px;background:#111827ee;backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 45px #0008}.nav button{border:0;background:transparent;color:var(--muted);padding:9px 3px;border-radius:12px;font-size:11px}.nav button.active{background:#202b47;color:#fff}.nav .add{font-size:24px;background:linear-gradient(135deg,#6c63ff,#28d7aa);color:white;margin:-18px 5px 4px;height:52px;border-radius:16px}
 .modal{position:fixed;inset:0;background:#020617cc;z-index:50;display:none;align-items:flex-end;justify-content:center}.modal.show{display:flex}.sheet{width:min(700px,100%);max-height:92vh;overflow:auto;background:#111827;border:1px solid #334155;border-bottom:0;border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -20px 60px #0008}.handle{width:44px;height:5px;border-radius:999px;background:#475569;margin:0 auto 16px}.sheet-head{display:flex;justify-content:space-between;gap:12px;align-items:start}.sheet-head h2{margin:2px 0 0}.close{border:1px solid var(--line);background:#182239;color:white;border-radius:50%;width:38px;height:38px}.types{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:16px 0}.types button{border:1px solid var(--line);background:#0e1728;color:var(--muted);padding:9px 5px;border-radius:12px;font-size:11px}.types button.active{border-color:#766aff;background:#24204c;color:#fff}.seg{padding:13px;background:#0d1627;border:1px solid var(--line);border-radius:16px;margin:10px 0}.seg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.timegrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.seg input{width:100%;background:#111827;border:1px solid var(--line);color:white;padding:10px;border-radius:10px}.totalrow{display:flex;justify-content:space-between;padding:12px 2px;font-size:16px}.sheet-actions{display:flex;justify-content:space-between;gap:8px;margin-top:16px}.sheet-actions .btn:last-child{flex:1}.hidden{display:none!important}.note{padding:12px;color:var(--muted);font-size:12px}.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:80;background:#172033;border:1px solid #334155;padding:10px 14px;border-radius:999px;display:none}.toast.show{display:block}
+.scan-card{padding:14px;margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}.scan-card strong{display:block}.scan-card small{color:var(--muted)}.scan-card .btn{white-space:nowrap}.scan-preview{width:100%;max-height:260px;object-fit:contain;background:#08101f;border:1px solid var(--line);border-radius:14px;margin-top:12px}.scan-status{margin:12px 0;padding:11px 12px;border:1px solid var(--line);background:#0c1424;border-radius:12px;color:var(--muted)}.scan-status.busy{color:#dbeafe;border-color:#4f46e5}.scan-results{display:grid;gap:8px;margin-top:12px}.scan-day{border:1px solid var(--line);background:#0d1627;border-radius:14px;padding:11px}.scan-day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.scan-day .timegrid{grid-template-columns:1fr 1fr}.scan-day .emptyline{color:var(--muted);font-size:12px}.scan-total{display:flex;justify-content:space-between;align-items:center;font-size:17px;padding:12px 2px}.progress{height:7px;background:#111827;border-radius:999px;overflow:hidden;margin-top:8px}.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%}
 @media(max-width:700px){.summary{grid-template-columns:1fr 1fr}.summary .mini:last-child{grid-column:1/-1}.day{grid-template-columns:56px 1fr auto;padding:12px}.day .date{font-size:20px}.stats{grid-template-columns:1fr}.cell{min-height:64px;padding:6px}.cell small{font-size:9px;margin-top:18px}.timegrid{grid-template-columns:1fr 1fr}.timegrid .break{grid-column:1/-1}.types{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
@@ -49,8 +50,24 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
   <div class="field"><label>Note</label><textarea id="noteInput" rows="2" placeholder="Ex. caisse, mise en rayon…"></textarea></div>
   <div class="sheet-actions"><button class="btn danger" id="deleteEntry">Supprimer</button><button class="btn primary" id="saveEntry">Enregistrer</button></div>
 </div></div>
+<div class="modal" id="scannerModal"><div class="sheet">
+  <div class="handle"></div>
+  <div class="sheet-head"><div><small style="color:var(--muted)">IMPORT PHOTO</small><h2>Scanner mon planning</h2></div><button class="close" id="closeScanner">✕</button></div>
+  <div class="field" style="margin-top:14px"><label>Nom / prénom tel qu'il apparaît sur le planning</label><input id="scanName" placeholder="Ex. CLEMENT"></div>
+  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div>
+  <div class="actions" style="margin-top:12px"><button class="btn primary" id="takePhoto">📷 Prendre une photo</button><button class="btn" id="pickPhoto">🖼️ Importer une photo</button></div>
+  <img id="scanPreview" class="scan-preview hidden" alt="Aperçu du planning">
+  <div id="scanStatus" class="scan-status">Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.</div>
+  <div class="progress hidden" id="scanProgress"><i id="scanProgressBar"></i></div>
+  <div id="scanResults" class="scan-results"></div>
+  <div id="scanTotal" class="scan-total hidden"><span>Total détecté</span><strong>0h00</strong></div>
+  <div class="sheet-actions"><button class="btn" id="clearScan">Réinitialiser</button><button class="btn primary hidden" id="importScan">Importer ce planning</button></div>
+  <div class="note">La lecture photo peut se tromper. Vérifie les horaires détectés avant de les importer.</div>
+</div></div>
 <div class="toast" id="toast"></div>
 <input id="importFile" type="file" accept=".json,application/json" class="hidden">
+<input id="photoCamera" type="file" accept="image/*" capture="environment" class="hidden">
+<input id="photoGallery" type="file" accept="image/*" class="hidden">
 <script>
 (function(){
 'use strict';
@@ -61,7 +78,7 @@ var days=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
 var daysLong=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
 var months=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 
-function defaults(){return {entries:[],settings:{weeklyTargetMinutes:1500,hourlyRateGross:0,employeeLabel:'Mon planning'}}}
+function defaults(){return {entries:[],settings:{weeklyTargetMinutes:1500,hourlyRateGross:0,employeeLabel:'Mon planning',ocrEmployeeName:''}}}
 function load(){try{var x=JSON.parse(localStorage.getItem(KEY)||'null');if(!x)return defaults();var d=defaults();d.entries=Array.isArray(x.entries)?x.entries:[];d.settings=Object.assign(d.settings,x.settings||{});return d}catch(e){return defaults()}}
 function persist(){localStorage.setItem(KEY,JSON.stringify(state.data))}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -92,7 +109,7 @@ function render(){
 function renderWeek(){
   var m=mapEntries(),ds=week(state.anchor),total=ds.reduce(function(n,d){return n+entryM(m.get(iso(d)))},0),target=state.data.settings.weeklyTargetMinutes,diff=total-target;
   var h='<section class="period card"><button id="prev">‹</button><button class="period-main" id="today"><small>Semaine</small><strong>'+weekLabel(state.anchor)+'</strong></button><button id="next">›</button></section>';
-  h+='<section class="summary"><div class="mini card"><span>Prévu</span><strong>'+fmt(total)+'</strong></div><div class="mini card"><span>Objectif</span><strong>'+fmt(target)+'</strong></div><div class="mini card"><span>Écart</span><strong class="'+(diff>=0?'positive':'negative')+'">'+(diff>0?'+':'')+fmt(diff)+'</strong></div></section>';
+  h+='<section class="summary"><div class="mini card"><span>Prévu</span><strong>'+fmt(total)+'</strong></div><div class="mini card"><span>Objectif</span><strong>'+fmt(target)+'</strong></div><div class="mini card"><span>Écart</span><strong class="'+(diff>=0?'positive':'negative')+'">'+(diff>0?'+':'')+fmt(diff)+'</strong></div></section>';h+='<section class="scan-card card"><div><strong>Importer un planning papier</strong><small>Photo → horaires détectés → calcul automatique</small></div><button class="btn primary" id="scanPlanning">📷 Scanner</button></section>';
   h+='<section class="week">';
   ds.forEach(function(d,i){var e=m.get(iso(d)),today=iso(d)===iso(new Date()),body='<span class="empty">Ajouter les horaires</span>',right='<strong>—</strong><small>libre</small>';
     if(e){if(e.type==='work'){body='<div class="segments">'+e.segments.map(function(s){return '<span class="pill work">'+escapeHtml(s.start)+' → '+escapeHtml(s.end)+(s.breakMinutes?' · '+s.breakMinutes+'m pause':'')+'</span>'}).join('')+'</div>';right='<strong>'+fmt(entryM(e))+'</strong><small>'+escapeHtml(e.note||'travail')+'</small>'}
@@ -103,7 +120,7 @@ function renderWeek(){
   document.getElementById('prev').onclick=function(){state.anchor=addDays(state.anchor,-7);render()};
   document.getElementById('next').onclick=function(){state.anchor=addDays(state.anchor,7);render()};
   document.getElementById('today').onclick=function(){state.anchor=new Date();render()};
-  document.querySelectorAll('.day').forEach(function(x){x.onclick=function(){openEditor(fromIso(x.dataset.date))}});
+  document.querySelectorAll('.day').forEach(function(x){x.onclick=function(){openEditor(fromIso(x.dataset.date))}});document.getElementById('scanPlanning').onclick=openScanner;
 }
 function monthCells(d){var first=new Date(d.getFullYear(),d.getMonth(),1),s=startWeek(first),a=[];for(var i=0;i<42;i++)a.push(addDays(s,i));return a}
 function renderMonth(){
@@ -120,11 +137,125 @@ function renderStats(){
   rows.slice().reverse().forEach(function(r){h+='<div style="display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)"><span>'+months[r.d.getMonth()]+' '+r.d.getFullYear()+'</span><b>'+fmt(r.m)+'</b></div>'});h+='</section>';document.getElementById('main').innerHTML=h;
 }
 function renderSettings(){
-  var s=state.data.settings,h='<div class="section-title">Réglages</div><section class="settings card"><div class="field"><label>Nom du planning</label><input id="employeeLabel" value="'+escapeHtml(s.employeeLabel)+'"></div><div class="field"><label>Objectif hebdomadaire (heures)</label><input id="weeklyTarget" type="number" min="0" step="0.25" value="'+(s.weeklyTargetMinutes/60)+'"></div><div class="field"><label>Taux horaire brut (€) — optionnel</label><input id="hourlyRate" type="number" min="0" step="0.01" value="'+s.hourlyRateGross+'"></div><button class="btn primary" id="saveSettings">Enregistrer les réglages</button><div class="section-title" style="margin:10px 0 0">Données</div><div class="actions"><button class="btn" id="exportIcs">Exporter calendrier .ics</button><button class="btn" id="exportJson">Sauvegarde JSON</button><button class="btn" id="importJson">Restaurer JSON</button></div><div class="note">Tes horaires sont enregistrés uniquement sur cet appareil dans le navigateur. Ils ne sont pas envoyés dans le dépôt GitHub.</div></section>';
+  var s=state.data.settings,h='<div class="section-title">Réglages</div><section class="settings card"><div class="field"><label>Nom du planning</label><input id="employeeLabel" value="'+escapeHtml(s.employeeLabel)+'"></div><div class="field"><label>Objectif hebdomadaire (heures)</label><input id="weeklyTarget" type="number" min="0" step="0.25" value="'+(s.weeklyTargetMinutes/60)+'"></div><div class="field"><label>Taux horaire brut (€) — optionnel</label><input id="hourlyRate" type="number" min="0" step="0.01" value="'+s.hourlyRateGross+'"></div><div class="field"><label>Nom sur le planning papier (pour le scanner)</label><input id="ocrEmployeeName" value="'+escapeHtml(s.ocrEmployeeName||'')+'" placeholder="Ex. CLEMENT"></div><button class="btn primary" id="saveSettings">Enregistrer les réglages</button><div class="section-title" style="margin:10px 0 0">Données</div><div class="actions"><button class="btn" id="exportIcs">Exporter calendrier .ics</button><button class="btn" id="exportJson">Sauvegarde JSON</button><button class="btn" id="importJson">Restaurer JSON</button></div><div class="note">Tes horaires sont enregistrés uniquement sur cet appareil dans le navigateur. Ils ne sont pas envoyés dans le dépôt GitHub.</div></section>';
   document.getElementById('main').innerHTML=h;
-  document.getElementById('saveSettings').onclick=function(){state.data.settings.employeeLabel=document.getElementById('employeeLabel').value||'Mon planning';state.data.settings.weeklyTargetMinutes=Math.round((Number(document.getElementById('weeklyTarget').value)||0)*60);state.data.settings.hourlyRateGross=Number(document.getElementById('hourlyRate').value)||0;persist();toast('Réglages enregistrés');render()};
+  document.getElementById('saveSettings').onclick=function(){state.data.settings.employeeLabel=document.getElementById('employeeLabel').value||'Mon planning';state.data.settings.weeklyTargetMinutes=Math.round((Number(document.getElementById('weeklyTarget').value)||0)*60);state.data.settings.hourlyRateGross=Number(document.getElementById('hourlyRate').value)||0;state.data.settings.ocrEmployeeName=document.getElementById('ocrEmployeeName').value.trim();persist();toast('Réglages enregistrés');render()};
   document.getElementById('exportJson').onclick=exportJson;document.getElementById('importJson').onclick=function(){document.getElementById('importFile').click()};document.getElementById('exportIcs').onclick=exportIcs;
 }
+
+var scanDraft=null,scanImageUrl=null;
+function openScanner(){
+  scanDraft=null;
+  document.getElementById('scanName').value=state.data.settings.ocrEmployeeName||'';
+  document.getElementById('scanWeekDate').value=iso(startWeek(state.anchor));
+  document.getElementById('scanResults').innerHTML='';
+  document.getElementById('scanPreview').classList.add('hidden');
+  document.getElementById('scanTotal').classList.add('hidden');
+  document.getElementById('importScan').classList.add('hidden');
+  setScanStatus("Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.",false,0);
+  document.getElementById('scannerModal').classList.add('show');
+}
+function closeScanner(){document.getElementById('scannerModal').classList.remove('show')}
+function setScanStatus(msg,busy,pct){
+  var s=document.getElementById('scanStatus'),p=document.getElementById('scanProgress'),b=document.getElementById('scanProgressBar');
+  s.textContent=msg;s.classList.toggle('busy',!!busy);
+  p.classList.toggle('hidden',!busy);if(typeof pct==='number')b.style.width=Math.max(0,Math.min(100,pct))+'%';
+}
+function normWord(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function timesInText(s){
+  s=String(s||'').replace(/[Oo]/g,'0');var out=[],m;
+  var re1=/\b([01]?\d|2[0-3])\s*[:hH.]\s*([0-5]\d)?\b/g;
+  while((m=re1.exec(s)))out.push(String(Number(m[1])).padStart(2,'0')+':'+String(Number(m[2]||0)).padStart(2,'0'));
+  var stripped=s.replace(re1,' ');
+  var re2=/\b([01]\d|2[0-3])([0-5]\d)\b/g;
+  while((m=re2.exec(stripped)))out.push(m[1]+':'+m[2]);
+  return out;
+}
+function parseTsv(tsv){
+  if(!tsv)return[];var lines=tsv.split(/\r?\n/),head=lines.shift().split('\t'),idx={};
+  head.forEach(function(x,i){idx[x]=i});
+  return lines.map(function(line){var a=line.split('\t'),txt=a.slice(idx.text).join('\t');return {text:txt,left:Number(a[idx.left])||0,top:Number(a[idx.top])||0,width:Number(a[idx.width])||0,height:Number(a[idx.height])||0,conf:Number(a[idx.conf])||0,x:(Number(a[idx.left])||0)+(Number(a[idx.width])||0)/2,y:(Number(a[idx.top])||0)+(Number(a[idx.height])||0)/2}}).filter(function(w){return w.text&&w.conf>-1});
+}
+function median(a){if(!a.length)return 16;a=a.slice().sort(function(x,y){return x-y});return a[Math.floor(a.length/2)]}
+function detectFromOcr(data,name,weekDate){
+  var words=parseTsv(data.tsv),dayNames=[['lundi','lun'],['mardi','mar'],['mercredi','mer'],['jeudi','jeu'],['vendredi','ven'],['samedi','sam'],['dimanche','dim']];
+  if(words.length<5)throw new Error("La photo a été lue, mais pas assez de zones ont été reconnues.");
+  var headers=[];
+  dayNames.forEach(function(names,di){
+    var cand=words.filter(function(w){var n=normWord(w.text);return names.some(function(k){return n===k||n.indexOf(k)===0})});
+    if(cand.length){cand.sort(function(a,b){return a.top-b.top||b.conf-a.conf});headers.push({day:di,word:cand[0],x:cand[0].x})}
+  });
+  if(headers.length<3)throw new Error("Je n'arrive pas à repérer suffisamment de jours sur la photo. Cadre toute la semaine.");
+  var nk=normWord(name);
+  if(!nk)throw new Error("Entre ton nom tel qu'il apparaît sur le planning.");
+  var nameParts=String(name).trim().split(/\s+/).map(normWord).filter(Boolean),nameWord=null,best=-1;
+  words.forEach(function(w){var n=normWord(w.text);if(!n)return;nameParts.forEach(function(p){var score=(n===p?100:(n.length>=4&&p.length>=4&&(n.indexOf(p)>=0||p.indexOf(n)>=0)?70:0))+w.conf/10;if(score>best){best=score;nameWord=w}})});
+  if(!nameWord||best<70)throw new Error("Je n'ai pas trouvé « "+name+" » sur la photo. Vérifie le nom ou reprends une photo plus nette.");
+  var mh=median(words.map(function(w){return w.height}).filter(function(x){return x>3})),tol=Math.max(28,mh*2.6);
+  var rowWords=words.filter(function(w){return Math.abs(w.y-nameWord.y)<=tol});
+  headers.sort(function(a,b){return a.x-b.x});
+  var byDay={};for(var d=0;d<7;d++)byDay[d]=[];
+  rowWords.forEach(function(w){
+    var ts=timesInText(w.text);if(!ts.length)return;
+    var nearest=headers[0],dist=Math.abs(w.x-nearest.x);
+    headers.forEach(function(h){var dd=Math.abs(w.x-h.x);if(dd<dist){dist=dd;nearest=h}});
+    ts.forEach(function(t){byDay[nearest.day].push({time:t,x:w.x,y:w.y})});
+  });
+  var ws=startWeek(fromIso(weekDate)),draft=[];
+  for(var di=0;di<7;di++){
+    var arr=byDay[di].sort(function(a,b){return a.x-b.x||a.y-b.y}),times=arr.map(function(x){return x.time});
+    var unique=[];times.forEach(function(t){if(unique[unique.length-1]!==t)unique.push(t)});
+    var segs=[];for(var j=0;j+1<unique.length;j+=2)segs.push({id:uid(),start:unique[j],end:unique[j+1],breakMinutes:0});
+    draft.push({date:iso(addDays(ws,di)),day:di,segments:segs});
+  }
+  var count=draft.reduce(function(n,x){return n+x.segments.length},0);
+  if(!count)throw new Error("Ton nom est trouvé, mais aucun couple d'horaires fiable n'a été détecté sur sa ligne.");
+  return draft;
+}
+function loadTesseract(){
+  if(window.Tesseract)return Promise.resolve();
+  return new Promise(function(resolve,reject){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=function(){reject(new Error("Impossible de charger le moteur de lecture photo."))};document.head.appendChild(s)});
+}
+function fileToDataUrl(file){return new Promise(function(resolve,reject){var r=new FileReader();r.onload=function(){resolve(r.result)};r.onerror=reject;r.readAsDataURL(file)})}
+async function scanPhoto(file){
+  var name=document.getElementById('scanName').value.trim(),weekDate=document.getElementById('scanWeekDate').value;
+  if(!name){setScanStatus("Entre d'abord ton nom tel qu'il apparaît sur le planning.",false);return}
+  if(!weekDate){setScanStatus("Choisis un jour appartenant à la semaine photographiée.",false);return}
+  try{
+    scanImageUrl=await fileToDataUrl(file);var img=document.getElementById('scanPreview');img.src=scanImageUrl;img.classList.remove('hidden');
+    document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');
+    setScanStatus("Chargement du lecteur de planning…",true,5);await loadTesseract();
+    var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Lecture de la photo : "+Math.round(m.progress*100)+" %",true,10+m.progress*80)}});
+    var result=await worker.recognize(scanImageUrl,{}, {text:true,tsv:true});await worker.terminate();
+    scanDraft=detectFromOcr(result.data,name,weekDate);state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Lecture terminée. Vérifie chaque horaire avant l'import.",false,100);
+  }catch(e){scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus(e&&e.message?e.message:"La lecture de la photo a échoué.",false)}
+}
+function renderScanDraft(){
+  var box=document.getElementById('scanResults');box.innerHTML='';
+  scanDraft.forEach(function(day){
+    var d=fromIso(day.date),el=document.createElement('div');el.className='scan-day';
+    var inner='<div class="scan-day-head"><b>'+daysLong[day.day]+' '+d.getDate()+' '+months[d.getMonth()]+'</b><span>'+fmt(day.segments.reduce(function(n,s){return n+segmentM(s)},0))+'</span></div>';
+    if(!day.segments.length)inner+='<div class="emptyline">Aucun horaire détecté</div>';
+    day.segments.forEach(function(s,si){inner+='<div class="timegrid" style="margin-top:7px"><div class="field"><label>Début</label><input type="time" data-day="'+day.day+'" data-seg="'+si+'" data-k="start" value="'+s.start+'"></div><div class="field"><label>Fin</label><input type="time" data-day="'+day.day+'" data-seg="'+si+'" data-k="end" value="'+s.end+'"></div></div>'});
+    el.innerHTML=inner;box.appendChild(el);
+  });
+  box.querySelectorAll('input[type=time]').forEach(function(inp){inp.oninput=function(){var day=scanDraft.find(function(x){return x.day===Number(inp.dataset.day)}),s=day.segments[Number(inp.dataset.seg)];s[inp.dataset.k]=inp.value;renderScanTotal()}});
+  document.getElementById('importScan').classList.remove('hidden');document.getElementById('scanTotal').classList.remove('hidden');renderScanTotal();
+}
+function renderScanTotal(){var total=(scanDraft||[]).reduce(function(n,d){return n+d.segments.reduce(function(a,s){return a+segmentM(s)},0)},0);document.querySelector('#scanTotal strong').textContent=fmt(total)}
+function importScannedPlanning(){
+  if(!scanDraft)return;
+  scanDraft.forEach(function(d){
+    if(!d.segments.length)return;
+    state.data.entries=state.data.entries.filter(function(e){return e.date!==d.date});
+    state.data.entries.push({date:d.date,type:'work',segments:d.segments,note:'Import photo'});
+  });
+  state.data.entries.sort(function(a,b){return a.date.localeCompare(b.date)});persist();state.anchor=fromIso(scanDraft[0].date);state.tab='week';closeScanner();render();toast('Planning importé et heures calculées');
+}
+function resetScan(){
+  scanDraft=null;scanImageUrl=null;document.getElementById('scanResults').innerHTML='';document.getElementById('scanPreview').src='';document.getElementById('scanPreview').classList.add('hidden');document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus("Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.",false,0);
+}
+
 function openEditor(d){
   var date=iso(d),existing=state.data.entries.find(function(e){return e.date===date});state.editing=existing?JSON.parse(JSON.stringify(existing)):{date:date,type:'work',segments:[blankSeg()],note:''};
   document.getElementById('editTitle').textContent=longDate(d);drawEditor();document.getElementById('modal').classList.add('show')
@@ -147,6 +278,14 @@ function importJsonFile(file){var r=new FileReader();r.onload=function(){try{var
 
 document.querySelectorAll('.nav button[data-tab]').forEach(function(b){b.onclick=function(){state.tab=b.dataset.tab;render()}});
 document.getElementById('quickAdd').onclick=function(){openEditor(new Date())};
+document.getElementById('closeScanner').onclick=closeScanner;
+document.getElementById('scannerModal').onclick=function(e){if(e.target.id==='scannerModal')closeScanner()};
+document.getElementById('takePhoto').onclick=function(){document.getElementById('photoCamera').click()};
+document.getElementById('pickPhoto').onclick=function(){document.getElementById('photoGallery').click()};
+document.getElementById('photoCamera').onchange=function(){if(this.files&&this.files[0])scanPhoto(this.files[0]);this.value=''};
+document.getElementById('photoGallery').onchange=function(){if(this.files&&this.files[0])scanPhoto(this.files[0]);this.value=''};
+document.getElementById('importScan').onclick=importScannedPlanning;
+document.getElementById('clearScan').onclick=resetScan;
 document.getElementById('closeModal').onclick=closeModal;document.getElementById('modal').onclick=function(e){if(e.target.id==='modal')closeModal()};
 document.getElementById('addSegment').onclick=function(){state.editing.segments.push(blankSeg());drawEditor()};
 document.getElementById('saveEntry').onclick=saveEdit;document.getElementById('deleteEntry').onclick=deleteEdit;
