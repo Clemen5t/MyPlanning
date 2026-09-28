@@ -8,7 +8,7 @@ export default {
     };
     if (request.method === "OPTIONS") return new Response(null,{status:204,headers:cors});
     const url=new URL(request.url);
-    if(request.method==="GET"&&url.pathname==="/health") return reply({ok:true,service:"MyPlanning AI",version:"0.1",vision:"Groq"},200,cors);
+    if(request.method==="GET"&&url.pathname==="/health") return reply({ok:true,service:"MyPlanning AI",version:"0.2",vision:"Groq",groq_secret:!!env.GROQ_API_KEY},200,cors);
     if(request.method!=="POST"||url.pathname!=="/scan") return reply({ok:false,error:"Route inconnue"},404,cors);
     if(!env.GROQ_API_KEY) return reply({ok:false,error:"GROQ_API_KEY absente du Worker"},500,cors);
     try{
