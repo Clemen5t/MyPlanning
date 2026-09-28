@@ -212,9 +212,9 @@ function detectFromOcr(data,name,weekDate){
     var timeWords=words.filter(function(w){return timesInText(w.text).length&&w.x>nameWord.x});
     if(timeWords.length){
       var minX=Math.min.apply(null,timeWords.map(function(w){return w.x})),maxX=Math.max.apply(null,timeWords.map(function(w){return w.x}));
-      var span=Math.max(140,maxX-minX);
-      dayStart=Math.max(nameWord.x+nameWord.width*.7,minX-span*.18);
-      dayEnd=Math.max(dayStart+span*1.15,allRight);
+      var leftGuess=Math.max(nameWord.x+Math.max(24,nameWord.width),minX-Math.max(20,(maxX-minX)*.10));
+      dayStart=Math.min(allRight*.48,leftGuess);
+      dayEnd=allRight;
     }else{
       dayStart=Math.max(nameWord.x+nameWord.width,allRight*.30);dayEnd=allRight;
     }
