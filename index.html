@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.01</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
+  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.02</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
   <main id="main"></main>
 </div>
 <nav class="nav">
@@ -182,8 +182,18 @@ function detectFromOcr(data,name,weekDate){
   if(words.length<5)throw new Error("La photo a été lue, mais pas assez de zones ont été reconnues.");
   var nameParts=String(name).trim().split(/\s+/).map(normWord).filter(Boolean),nameWord=null,best=-1;
   if(!nameParts.length)throw new Error("Entre ton nom tel qu'il apparaît sur le planning.");
-  words.forEach(function(w){var n=normWord(w.text);if(!n)return;nameParts.forEach(function(p){var score=(n===p?100:(n.length>=4&&p.length>=4&&(n.indexOf(p)>=0||p.indexOf(n)>=0)?72:0))+w.conf/10;if(score>best){best=score;nameWord=w}})});
-  if(!nameWord||best<70)throw new Error("Je n'ai pas trouvé « "+name+" » sur la photo. Vérifie le nom ou reprends une photo plus nette.");
+  function editDistance(a,b){var m=a.length,n=b.length,dp=Array(n+1);for(var j=0;j<=n;j++)dp[j]=j;for(var i=1;i<=m;i++){var prev=dp[0];dp[0]=i;for(var j=1;j<=n;j++){var tmp=dp[j],cost=a[i-1]===b[j-1]?0:1;dp[j]=Math.min(dp[j]+1,dp[j-1]+1,prev+cost);prev=tmp}}return dp[n]}
+  function wordSimilarity(a,b){if(!a||!b)return 0;if(a===b)return 1;if(a.length>=4&&b.length>=4&&(a.indexOf(b)>=0||b.indexOf(a)>=0))return .88;var d=editDistance(a,b),mx=Math.max(a.length,b.length);return mx?1-d/mx:0}
+  words.forEach(function(w){var n=normWord(w.text);if(!n)return;nameParts.forEach(function(p){var sim=wordSimilarity(n,p),score=sim*100+Math.max(0,w.conf)/20;if(score>best){best=score;nameWord=w}})});
+  // Sur les photos de tableau, un nom en petites capitales peut perdre 1–2 lettres à l'OCR.
+  // On accepte une correspondance floue, mais uniquement si elle reste suffisamment proche.
+  if(!nameWord||best<62){
+    // Dernier fallback : la ligne salarié se situe à gauche des colonnes horaires.
+    // Chercher un mot de taille proche du nom et ressemblant partiellement au patronyme.
+    var target=nameParts[0],candidates=words.filter(function(w){var n=normWord(w.text);return n.length>=Math.max(4,target.length-3)&&n.length<=target.length+3&&w.x<(words.reduce(function(mx,z){return Math.max(mx,z.left+z.width)},0)*.45)});
+    candidates.forEach(function(w){var n=normWord(w.text),sim=wordSimilarity(n,target),score=sim*100+Math.max(0,w.conf)/30;if(score>best){best=score;nameWord=w}});
+  }
+  if(!nameWord||best<52)throw new Error("Le nom est trop petit pour être lu avec certitude. Zoome sur le tableau en gardant ta ligne entière et les 7 jours visibles.");
 
   // 1) Repérer les colonnes de jours si l'OCR arrive à lire les en-têtes.
   var rawHeaders=[];
@@ -262,6 +272,18 @@ function loadTesseract(){
   return new Promise(function(resolve,reject){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=function(){reject(new Error("Impossible de charger le moteur de lecture photo."))};document.head.appendChild(s)});
 }
 function fileToDataUrl(file){return new Promise(function(resolve,reject){var r=new FileReader();r.onload=function(){resolve(r.result)};r.onerror=reject;r.readAsDataURL(file)})}
+function enhanceForOcr(dataUrl){
+  return new Promise(function(resolve){
+    var im=new Image();im.onload=function(){
+      var maxW=2600,scale=Math.min(3,Math.max(1.4,maxW/im.width)),cv=document.createElement('canvas');
+      cv.width=Math.round(im.width*scale);cv.height=Math.round(im.height*scale);
+      var ctx=cv.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(im,0,0,cv.width,cv.height);
+      var id=ctx.getImageData(0,0,cv.width,cv.height),p=id.data;
+      for(var i=0;i<p.length;i+=4){var y=.299*p[i]+.587*p[i+1]+.114*p[i+2],v=y<128?Math.max(0,y*.78):Math.min(255,128+(y-128)*1.22);p[i]=p[i+1]=p[i+2]=v}
+      ctx.putImageData(id,0,0);resolve(cv.toDataURL('image/jpeg',.94));
+    };im.onerror=function(){resolve(dataUrl)};im.src=dataUrl;
+  })
+}
 async function scanPhoto(file){
   var name=document.getElementById('scanName').value.trim(),weekDate=document.getElementById('scanWeekDate').value;
   if(!name){setScanStatus("Entre d'abord ton nom tel qu'il apparaît sur le planning.",false);return}
@@ -269,9 +291,10 @@ async function scanPhoto(file){
   try{
     scanImageUrl=await fileToDataUrl(file);var img=document.getElementById('scanPreview');img.src=scanImageUrl;img.classList.remove('hidden');
     document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');
-    setScanStatus("Chargement du lecteur de planning…",true,5);await loadTesseract();
+    setScanStatus("Amélioration de la photo…",true,4);var ocrImage=await enhanceForOcr(scanImageUrl);await loadTesseract();
     var worker=await Tesseract.createWorker('fra',1,{logger:function(m){if(m&&typeof m.progress==='number')setScanStatus("Lecture de la photo : "+Math.round(m.progress*100)+" %",true,10+m.progress*80)}});
-    var result=await worker.recognize(scanImageUrl,{}, {text:true,tsv:true});await worker.terminate();
+    await worker.setParameters({preserve_interword_spaces:'1'});
+    var result=await worker.recognize(ocrImage,{}, {text:true,tsv:true});await worker.terminate();
     scanDraft=detectFromOcr(result.data,name,weekDate);state.data.settings.ocrEmployeeName=name;persist();renderScanDraft();setScanStatus("Lecture terminée. Vérifie chaque horaire avant l'import.",false,100);
   }catch(e){scanDraft=null;document.getElementById('scanResults').innerHTML='';document.getElementById('importScan').classList.add('hidden');document.getElementById('scanTotal').classList.add('hidden');setScanStatus(e&&e.message?e.message:"La lecture de la photo a échoué.",false)}
 }
