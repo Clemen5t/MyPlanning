@@ -3,8 +3,12 @@ name = "myplanning"
 main = "worker/worker.js"
 compatibility_date = "2026-09-28"
 workers_dev = true
+keep_vars = true
 
 [observability]
 enabled = true
 
 # GROQ_API_KEY stays in Cloudflare Worker secrets; never add its value here.
+
+[secrets]
+required = ["GROQ_API_KEY"]
