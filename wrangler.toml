@@ -1,0 +1,10 @@
+# Cloudflare Workers Builds runs `npx wrangler deploy` from the repository root.
+name = "myplanning"
+main = "worker/worker.js"
+compatibility_date = "2026-09-28"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# GROQ_API_KEY stays in Cloudflare Worker secrets; never add its value here.
