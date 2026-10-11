@@ -17,7 +17,7 @@ run_worker_first = ["/api/*", "/scan", "/health"]
 binding = "DB"
 database_name = "myplanning"
 # Replace with the ID returned by `npx wrangler d1 create myplanning`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "f1ae57ca-b698-4b1a-ab43-42332c2fa1fb"
 migrations_dir = "worker/migrations"
 
 [triggers]
