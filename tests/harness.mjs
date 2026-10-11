@@ -1,7 +1,7 @@
 import { nodeRuntime } from './node-runtime.mjs';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 export const PASS='une phrase de passe solide';
 
@@ -25,8 +25,11 @@ export async function setup(){
   };
   const mf=process.env.MYPLANNING_TEST_RUNTIME==='node'?nodeRuntime(options):new Miniflare(convertV4MiniflareOptions(options));
   const db=await mf.getD1Database('DB');
-  const schema=await readFile('worker/migrations/0001_accounts.sql','utf8');
-  for(const statement of schema.split(';').map(x=>x.trim()).filter(Boolean))await db.prepare(statement).run();
+  const migrationFiles=(await readdir('worker/migrations')).filter(x=>x.endsWith('.sql')).sort();
+  for(const file of migrationFiles){
+    const schema=await readFile('worker/migrations/'+file,'utf8');
+    for(const statement of schema.split(';').map(x=>x.trim()).filter(Boolean))await db.prepare(statement).run();
+  }
 
   let ip=0;
   function client(){
