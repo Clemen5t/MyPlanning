@@ -29,4 +29,4 @@ enabled = false
 # GROQ_API_KEY stays in Cloudflare Worker secrets; never add its value here.
 
 [secrets]
-required = ["GROQ_API_KEY", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_URL"]
+required = ["GROQ_API_KEY"]
