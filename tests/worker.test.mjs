@@ -2,26 +2,45 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, PASS } from './harness.mjs';
 import { defaultPlanning } from '../validation.js';
-let h;before(async()=>{h=await setup();});after(async()=>{await h?.close();});
+
+let h;
+before(async()=>{h=await setup();});
+after(async()=>{await h?.close();});
 const post=(c,path,body)=>c.request('/api/auth/'+path,{method:'POST',body});
-test('registration requires confirmation; login by username/email; cookie survives page reload',async()=>{
-  const c=h.client();const mail=await h.register(c,'alice');
-  assert.equal((await post(c,'login',{identifier:'alice',password:PASS})).status,401);
-  assert.equal((await post(c,'confirm',{tokenHash:h.confirmations.get(mail)})).status,200);
-  const logged=await post(c,'login',{identifier:'ALICE',password:PASS});assert.equal(logged.status,200);
-  for(const flag of ['HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=2592000'])assert.ok(logged.headers.get('set-cookie').includes(flag));
-  assert.equal(logged.data.user.email,mail);assert.equal(logged.data.access_token,undefined);
-  const restored=h.client();restored.cookie=c.cookie;assert.equal((await restored.request('/api/auth/session')).data.user.username,'alice');
-  const emailLogin=h.client();assert.equal((await post(emailLogin,'login',{identifier:mail.toUpperCase(),password:PASS})).status,200);
-  const row=await h.db.prepare('SELECT * FROM sessions LIMIT 1').first();assert.notEqual(row.token_hash,c.cookie.split('=')[1]);
-  const columns=await h.db.prepare('PRAGMA table_info(users)').all();assert.ok(columns.results.every(x=>!x.name.includes('password')));
+
+test('registration creates a secure session and login works with username only',async()=>{
+  const c=h.client();
+  const registered=await h.register(c,'alice');
+  assert.equal(registered.status,200);
+  assert.equal(registered.data.user.username,'alice');
+  assert.equal(registered.data.user.email,undefined);
+  for(const flag of ['HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=2592000'])assert.ok(registered.headers.get('set-cookie').includes(flag));
+
+  const restored=h.client();restored.cookie=c.cookie;
+  assert.equal((await restored.request('/api/auth/session')).data.user.username,'alice');
+
+  const second=h.client();
+  assert.equal((await post(second,'login',{identifier:'ALICE',password:PASS})).status,200);
+
+  const row=await h.db.prepare('SELECT * FROM users WHERE username=?').bind('alice').first();
+  assert.ok(row.password_salt);
+  assert.ok(row.password_hash);
+  assert.notEqual(row.password_hash,PASS);
+  assert.equal(row.password_iterations,100000);
+
+  const session=await h.db.prepare('SELECT * FROM sessions LIMIT 1').first();
+  assert.notEqual(session.token_hash,c.cookie.split('=')[1]);
 });
-test('invalid passwords and duplicate usernames are rejected without issuing sessions',async()=>{
-  const c=h.client();assert.equal((await post(c,'login',{identifier:'alice',password:'wrong'})).status,401);
-  assert.equal((await post(c,'register',{username:'x',email:'bad',displayName:'A',password:'short'})).status,400);
-  assert.equal((await post(c,'register',{username:'alice',email:'someone@example.com',displayName:'A',password:PASS})).status,409);
-  assert.equal(c.cookie,'');
+
+test('invalid passwords and duplicate usernames are rejected without new accounts',async()=>{
+  const c=h.client();
+  assert.equal((await post(c,'login',{identifier:'alice',password:'wrong'})).status,401);
+  assert.equal((await post(c,'register',{username:'x',displayName:'A',password:'short'})).status,400);
+  assert.equal((await post(c,'register',{username:'alice',displayName:'A',password:PASS})).status,409);
+  const count=await h.db.prepare('SELECT COUNT(*) AS n FROM users').first();
+  assert.equal(count.n,1);
 });
+
 test('planning isolation, authenticated ownership, validation and revision conflicts',async()=>{
   const a=h.client(),b=h.client();const ra=await h.signUp(a,'owner-a');await h.signUp(b,'owner-b');
   const data=defaultPlanning();data.entries=[{date:'2026-10-12',type:'work',note:'private Alice',segments:[{id:'" onmouseover="bad',start:'09:00',end:'17:00',breakMinutes:30}]}];
@@ -34,15 +53,16 @@ test('planning isolation, authenticated ownership, validation and revision confl
   assert.equal((await a.request('/api/planning',{method:'PUT',body:{revision:1,data}})).status,400);
   assert.equal((await h.client().request('/api/planning')).status,401);
 });
+
 test('CSRF, cross-origin, malformed and oversized bodies are rejected',async()=>{
   const c=h.client();await h.signUp(c,'csrf-user');
   assert.equal((await c.request('/api/planning',{method:'PUT',body:{},headers:{'X-CSRF-Token':''}})).status,403);
-  assert.equal((await post(h.client(),'login',{identifier:'alice',password:PASS})).status,200);
   assert.equal((await c.request('/api/auth/logout',{method:'POST',body:{},headers:{Origin:'https://evil.example'}})).status,403);
   assert.equal((await c.request('/api/auth/login',{method:'POST',raw:'{'})).status,400);
   assert.equal((await c.request('/api/auth/login',{method:'POST',raw:'x'.repeat(17000)})).status,413);
   assert.equal((await c.request('/api/auth/login',{method:'POST',raw:'{}',headers:{'Content-Type':'text/plain'}})).status,415);
 });
+
 test('logout revokes the cookie server-side and expiry blocks planning and scan',async()=>{
   const c=h.client();await h.signUp(c,'logout-user');const stolen=c.cookie;
   assert.equal((await post(c,'logout',{})).status,200);c.cookie=stolen;
@@ -52,6 +72,7 @@ test('logout revokes the cookie server-side and expiry blocks planning and scan'
   assert.equal((await c.request('/api/planning')).status,401);
   assert.equal((await c.request('/scan',{method:'POST',body:{employee:'Alice',image:'AQID'}})).status,401);
 });
+
 test('profile edits, password change and logout-all invalidate other devices',async()=>{
   const a=h.client(),b=h.client();await h.signUp(a,'profile-user');await post(b,'login',{identifier:'profile-user',password:PASS});
   assert.equal((await post(a,'profile',{username:'new-profile',displayName:'Nouveau nom'})).data.user.username,'new-profile');
@@ -60,21 +81,15 @@ test('profile edits, password change and logout-all invalidate other devices',as
   assert.equal((await post(a,'login',{identifier:'new-profile',password:PASS})).status,401);
   assert.equal((await post(a,'login',{identifier:'new-profile',password:'nouvelle phrase de passe'})).status,200);
   await post(b,'login',{identifier:'new-profile',password:'nouvelle phrase de passe'});
-  assert.equal((await post(a,'logout-all',{})).status,200);assert.equal((await b.request('/api/auth/session')).status,401);
+  assert.equal((await post(a,'logout-all',{})).status,200);
+  assert.equal((await b.request('/api/auth/session')).status,401);
 });
-test('password recovery is one-use, changes the password and revokes sessions',async()=>{
-  const c=h.client();await h.signUp(c,'recover-user');
-  assert.equal((await post(c,'forgot-password',{email:'recover-user@example.com'})).status,200);
-  const tokenHash=h.recoveries.get('recover-user@example.com');
-  assert.equal((await post(h.client(),'reset-password',{tokenHash,password:'encore une phrase solide'})).status,200);
-  assert.equal((await c.request('/api/auth/session')).status,401);
-  assert.equal((await post(h.client(),'reset-password',{tokenHash,password:'encore une phrase solide'})).status,400);
-  assert.equal((await post(c,'login',{identifier:'recover-user',password:'encore une phrase solide'})).status,200);
-});
-test('scanner keeps the Groq contract and secret, requires auth and redacts upstream failures',async()=>{
+
+test('scanner keeps the Groq contract and secret and requires authentication',async()=>{
   const c=h.client();await h.signUp(c,'scan-user');
   const before=h.external.calls.length;
-  assert.equal((await h.client().request('/scan',{method:'POST',body:{employee:'Alice',image:'AQID'}})).status,401);assert.equal(h.external.calls.length,before);
+  assert.equal((await h.client().request('/scan',{method:'POST',body:{employee:'Alice',image:'AQID'}})).status,401);
+  assert.equal(h.external.calls.length,before);
   const scanned=await c.request('/scan',{method:'POST',body:{employee:'Alice',image:'data:image/jpeg;base64,AQID'}});
   assert.equal(scanned.status,200);assert.equal(scanned.data.planning.days[0].shifts[0].start,'09:00');
   const sent=h.external.calls.at(-1);assert.equal(sent.headers.authorization,'Bearer test-groq-secret');assert.equal(sent.body.model,'qwen/qwen3.8-27b');
@@ -83,9 +98,9 @@ test('scanner keeps the Groq contract and secret, requires auth and redacts upst
   assert.equal(failed.status,502);assert.ok(!JSON.stringify(failed.data).includes('private upstream'));
   h.external.invalidGroq=true;assert.equal((await c.request('/scan',{method:'POST',body:{employee:'Alice',image:'AQID'}})).status,502);h.external.invalidGroq=false;
 });
-test('durable login throttling and provider outages',async()=>{
+
+test('durable login throttling blocks repeated invalid attempts',async()=>{
   const c=h.client();
   for(let n=0;n<10;n++)assert.equal((await post(c,'login',{identifier:'missing-user',password:PASS})).status,401);
   assert.equal((await post(c,'login',{identifier:'missing-user',password:PASS})).status,429);
-  h.external.providerFailure=true;assert.equal((await post(h.client(),'login',{identifier:'alice',password:PASS})).status,503);h.external.providerFailure=false;
 });
