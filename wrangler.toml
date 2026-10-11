@@ -5,8 +5,26 @@ compatibility_date = "2026-09-28"
 workers_dev = true
 keep_vars = true
 
+[build]
+command = "npm run build"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/scan", "/health"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "myplanning"
+# Replace with the ID returned by `npx wrangler d1 create myplanning`.
+database_id = "f1ae57ca-b698-4b1a-ab43-42332c2fa1fb"
+migrations_dir = "worker/migrations"
+
+[triggers]
+crons = ["17 3 * * *"]
+
 [observability]
-enabled = true
+enabled = false
 
 # GROQ_API_KEY stays in Cloudflare Worker secrets; never add its value here.
 

@@ -1,27 +1,40 @@
-# MyPlanning
+# MyPlanning v0.07
 
-Application personnelle de planning inspirée de Skello, pensée pour une seule personne.
+Planning personnel avec la même interface que v0.06 : semaine, mois, statistiques,
+créneaux, pauses, export calendrier et scanner photo Groq.
 
-## V1
+La v0.07 ajoute des **comptes identifiant + mot de passe**, sans email obligatoire
+et sans confirmation par email. Le fonctionnement reprend le principe déjà utilisé
+dans Disney Wait / MagicWait, avec D1 à la place de KV pour les données privées.
 
-- Planning semaine lundi → dimanche
-- Plusieurs créneaux dans une même journée
-- Pauses non payées
-- Repos, congé, arrêt, formation
-- Objectif hebdomadaire configurable (25 h par défaut)
-- Total jour / semaine / mois et écart avec l'objectif
-- Statistiques sur 6 mois
-- Estimation du salaire brut avec taux horaire optionnel
-- Export calendrier `.ics`
-- Sauvegarde / restauration JSON
-- Installation PWA sur iPhone et Android
-- Fonctionnement hors ligne
-- Données stockées localement dans le navigateur
+- mot de passe dérivé côté Worker avec PBKDF2 / SHA-256, sel aléatoire et 100 000 itérations ;
+- aucun mot de passe en clair dans D1, GitHub, localStorage ou le cookie ;
+- sessions aléatoires de 256 bits, stockées dans D1 uniquement sous empreinte SHA-256 ;
+- cookie `__Host-myplanning` HttpOnly, Secure, SameSite=Lax, 30 jours ;
+- protection CSRF et limites de tentatives de connexion/inscription ;
+- profil modifiable, changement de mot de passe et déconnexion de tous les appareils ;
+- plannings privés par utilisateur dans Cloudflare D1 ;
+- scanner Groq protégé par connexion et `GROQ_API_KEY` conservé côté Worker.
 
-## Confidentialité
+Il n’y a **pas encore de récupération de mot de passe** : l’utilisateur doit
+conserver sa phrase de passe. Aucune adresse email n’est collectée pour le compte.
 
-Le dépôt contient le code de l'application. Les horaires saisis restent dans le navigateur via `localStorage` et ne sont pas envoyés sur GitHub.
+## Configuration
 
-## Publication
+Lire [DEPLOYMENT.md](DEPLOYMENT.md). La base D1 `myplanning` est utilisée via
+le binding `DB`. Le seul secret obligatoire pour les fonctions actuelles est
+`GROQ_API_KEY`.
 
-Le workflow GitHub Actions `.github/workflows/deploy-pages.yml` publie automatiquement la branche `main` sur GitHub Pages une fois Pages configuré avec la source **GitHub Actions**.
+## Développement
+
+Node.js 24 :
+
+```sh
+npm ci
+npm test
+npm run build
+npx wrangler deploy --dry-run
+```
+
+Les tests utilisent workerd/Miniflare et D1 local. Un repli SQLite natif pour
+Windows est disponible avec `MYPLANNING_TEST_RUNTIME=node`.

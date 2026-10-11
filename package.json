@@ -1,0 +1,18 @@
+{
+  "name": "myplanning",
+  "version": "0.0.7",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jsdom": "30.1.2",
+    "miniflare": "5.20261006.1-alpha",
+    "wrangler": "4.149.0"
+  }
+}

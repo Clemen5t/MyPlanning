@@ -1,34 +1,47 @@
+import { authRoute, getSession } from './auth.js';
+import { scan } from './scan.js';
+import { HttpError, json, checkOrigin, readJson, now, rateLimit } from './security.js';
+import { validatePlanning } from '../validation.js';
+
 export default {
   async fetch(request, env) {
-    const cors = {
-      "Access-Control-Allow-Origin": "https://clemen5t.github.io",
-      "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Content-Type": "application/json; charset=UTF-8"
-    };
-    if (request.method === "OPTIONS") return new Response(null,{status:204,headers:cors});
-    const url=new URL(request.url);
-    if(request.method==="GET"&&url.pathname==="/health") return reply({ok:true,service:"MyPlanning AI",version:"0.2",vision:"Groq",groq_secret:!!env.GROQ_API_KEY},200,cors);
-    if(request.method!=="POST"||url.pathname!=="/scan") return reply({ok:false,error:"Route inconnue"},404,cors);
-    if(!env.GROQ_API_KEY) return reply({ok:false,error:"GROQ_API_KEY absente du Worker"},500,cors);
-    try{
-      const body=await request.json();
-      const employee=String(body.employee||"").trim();
-      if(!body.image) return reply({ok:false,error:"Image manquante"},400,cors);
-      if(!employee) return reply({ok:false,error:"Nom du salarié manquant"},400,cors);
-      let image=String(body.image);
-      if(!image.startsWith("data:image/")) image="data:image/jpeg;base64,"+image;
-      if(image.length>12000000) return reply({ok:false,error:"Image trop volumineuse"},413,cors);
-      const prompt=`Analyse cette photo d'un planning de travail. Recherche UNIQUEMENT le salarié "${employee.replace(/[\r\n"]/g," ")}". Comprends visuellement le tableau et les colonnes lundi à dimanche. Ne prends jamais les horaires d'un autre salarié et n'invente jamais une valeur illisible. Une journée peut contenir plusieurs créneaux. Retourne uniquement un JSON valide avec exactement cette structure: {"employee_requested":"...","employee_found":null,"confidence":0,"days":[{"day":"monday","date":null,"shifts":[]},{"day":"tuesday","date":null,"shifts":[]},{"day":"wednesday","date":null,"shifts":[]},{"day":"thursday","date":null,"shifts":[]},{"day":"friday","date":null,"shifts":[]},{"day":"saturday","date":null,"shifts":[]},{"day":"sunday","date":null,"shifts":[]}],"warnings":[]}. Chaque shift est {"start":"HH:MM","end":"HH:MM"}. confidence est un entier 0-100. Si le salarié n'est pas identifié avec certitude, employee_found=null et n'utilise aucun horaire d'une autre ligne. Ignore les totaux.`;
-      const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{Authorization:`Bearer ${env.GROQ_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({model:"qwen/qwen3.8-27b",temperature:0,max_completion_tokens:1800,response_format:{type:"json_object"},messages:[{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:image}}]}]})});
-      const data=await r.json();
-      if(!r.ok) return reply({ok:false,error:"Erreur Groq",status:r.status,details:data?.error?.message||"Erreur inconnue"},502,cors);
-      const raw=data?.choices?.[0]?.message?.content;
-      if(!raw) return reply({ok:false,error:"Groq n'a renvoyé aucun résultat"},502,cors);
-      let planning; try{planning=JSON.parse(raw)}catch(e){return reply({ok:false,error:"Réponse Vision invalide"},502,cors)}
-      if(!Array.isArray(planning.days)) return reply({ok:false,error:"Structure de planning invalide"},502,cors);
-      return reply({ok:true,engine:"groq",model:"qwen/qwen3.8-27b",planning},200,cors);
-    }catch(e){return reply({ok:false,error:"Erreur serveur",details:String(e?.message||e)},500,cors)}
+    const path=new URL(request.url).pathname;
+    if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.07',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!env.DB});
+    if(!path.startsWith('/api/')&&path!=='/scan') return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found',{status:404});
+    try {
+      if(!env.DB) throw new HttpError(503,'La base de comptes n’est pas encore configurée.');
+      if(!['GET','HEAD'].includes(request.method)) checkOrigin(request);
+      if(path.startsWith('/api/auth/')) return await authRoute(request,env,path);
+      const session=await getSession(request,env);
+      if((path==='/scan'||path==='/api/scan')&&request.method==='POST') return await scan(request,env,session);
+      if(path==='/api/planning') {
+        if(request.method==='GET') {
+          const row=await env.DB.prepare('SELECT data,revision FROM plannings WHERE user_id=?').bind(session.id).first();
+          return json({ok:true,data:JSON.parse(row.data),revision:row.revision});
+        }
+        if(request.method==='PUT') {
+          await rateLimit(env,'write:'+session.id,120,60);
+          const body=await readJson(request,2000000);
+          if(!Number.isSafeInteger(body.revision)||body.revision<0) throw new HttpError(400,'Version du planning invalide.');
+          let data; try { data=validatePlanning(body.data); } catch(e) { throw new HttpError(400,e.message); }
+          const result=await env.DB.prepare('UPDATE plannings SET data=?,revision=revision+1,updated_at=? WHERE user_id=? AND revision=? RETURNING revision').bind(JSON.stringify(data),now(),session.id,body.revision).first();
+          if(!result) throw new HttpError(409,'Le planning a été modifié sur un autre appareil. Recharge sa dernière version avant de continuer.');
+          return json({ok:true,revision:result.revision});
+        }
+        throw new HttpError(405,'Méthode non autorisée.');
+      }
+      throw new HttpError(404,'Route inconnue.');
+    } catch(error) {
+      const status=error instanceof HttpError?error.status:500;
+      return json({ok:false,error:status===500?'Erreur serveur. Réessaie.':error.message},status,{
+        ...(status===429?{'Retry-After':'600'}:{})
+      });
+    }
+  },
+  async scheduled(_event, env) {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(now()),
+      env.DB.prepare('DELETE FROM rate_limits WHERE expires_at<=?').bind(now())
+    ]);
   }
 };
-function reply(data,status,headers){return new Response(JSON.stringify(data),{status,headers})}
