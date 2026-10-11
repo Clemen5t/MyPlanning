@@ -1,62 +1,21 @@
-# MyPlanning AI Worker
+# Worker MyPlanning v0.07
 
-Backend Vision de MyPlanning, déployé sur le Worker Cloudflare existant `myplanning`.
-Le frontend/PWA reste publié sur GitHub Pages, sans changement de design ni de version.
+Le Worker existant `myplanning` sert maintenant l’application, les comptes et les
+plannings privés, ainsi que `/scan` (Groq). Utiliser uniquement le `wrangler.toml`
+à la racine du dépôt ; la configuration concurrente dans ce dossier a été retirée.
 
-## Cloudflare Workers Builds
+La configuration complète est dans [DEPLOYMENT.md](../DEPLOYMENT.md).
+`GROQ_API_KEY` reste un secret du Worker existant, requis lors du déploiement.
+D1, `SUPABASE_URL` et `SUPABASE_PUBLISHABLE_KEY` doivent être préparés avant mise
+en service. Aucune clé d’administration Supabase n’est nécessaire.
 
-Conserver ces réglages pour le dépôt `Clemen5t/MyPlanning` :
+Routes publiques : `GET /health`, fichiers statiques autorisés de `dist/`.
+Authentification : `/api/auth/register`, `confirm`, `login`, `session`,
+`forgot-password`, `reset-password`, `profile`, `password`, `logout`, `logout-all`.
+Données privées : `GET/PUT /api/planning`, `POST /scan` (alias `/api/scan`).
 
-| Réglage | Valeur |
-| --- | --- |
-| Branche de production | `main` |
-| Root directory | `/` (racine du dépôt) |
-| Build command | aucune |
-| Deploy command | `npx wrangler deploy` |
-
-Le fichier `wrangler.toml` à la racine pointe explicitement vers `worker/worker.js`.
-Il ne déclare aucun répertoire `assets` : Cloudflare déploie le backend, pas les
-fichiers du dépôt. Ne pas ajouter `assets.directory = "."` ni de configuration
-`wrangler.json` / `wrangler.jsonc` concurrente à la racine.
-
-La configuration `worker/wrangler.toml` reste utilisable pour un lancement manuel
-depuis `worker/`. Workers Builds doit utiliser celle de la racine.
-
-Pour vérifier le bundle sans publier, depuis la racine :
-
-```sh
-npx wrangler deploy --dry-run
-```
-
-## Secret Cloudflare
-
-Conserver `GROQ_API_KEY` dans **myplanning → Settings → Variables and Secrets**,
-avec le type **Secret**. Le code l'utilise via `env.GROQ_API_KEY`.
-Ne jamais copier sa valeur dans GitHub, le frontend ou une section `[vars]`.
-Le déploiement cible le même Worker et n'ajoute, ne remplace ni ne supprime ce secret.
-
-## Vérification
-
-Après un build réussi :
-
-```sh
-curl -i https://myplanning.v76y74m25h.workers.dev/health
-```
-
-Réponse attendue : HTTP 200, de type JSON, avec :
-
-```json
-{"ok":true,"service":"MyPlanning AI","version":"0.1","vision":"Groq"}
-```
-
-Routes :
-- `GET /health`
-- `POST /scan` avec `{"employee":"BORELLO","image":"data:image/jpeg;base64,..."}`
-
-`/health` confirme que le code du Worker s'exécute ; cette route n'appelle pas Groq.
-Un `POST /scan` avec `{}` doit répondre HTTP 400 `Image manquante` si le secret
-est présent, sans appel à Groq. HTTP 500 `GROQ_API_KEY absente du Worker`
-signale un secret manquant.
-
-La publication frontend **v0.06** reste conditionnée à un test Vision complet
-avec une vraie photo : photo → Worker → Groq → JSON de planning exploitable.
+Les requêtes mutantes attendent `Origin` identique à l’API et JSON. Celles d’une
+session existante demandent également `X-CSRF-Token`. Le serveur déduit le
+propriétaire du cookie, jamais d’un paramètre `user_id` client. Les données ne
+sont ni journalisées ni mises en cache. Le cron quotidien purge les données
+techniques expirées sans supprimer les plannings.
