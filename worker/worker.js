@@ -6,7 +6,7 @@ import { validatePlanning } from '../validation.js';
 export default {
   async fetch(request, env) {
     const path=new URL(request.url).pathname;
-    if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.07',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!(env.DB&&env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY)});
+    if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.07',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!env.DB});
     if(!path.startsWith('/api/')&&path!=='/scan') return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found',{status:404});
     try {
       if(!env.DB) throw new HttpError(503,'La base de comptes n’est pas encore configurée.');
@@ -41,7 +41,6 @@ export default {
   async scheduled(_event, env) {
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(now()),
-      env.DB.prepare('DELETE FROM reservations WHERE expires_at<=?').bind(now()),
       env.DB.prepare('DELETE FROM rate_limits WHERE expires_at<=?').bind(now())
     ]);
   }
