@@ -1,18 +1,24 @@
 import { authRoute, getSession } from './auth.js';
 import { scan } from './scan.js';
+import { calendarApi, serveCalendar } from './calendar.js';
 import { HttpError, json, checkOrigin, readJson, now, rateLimit } from './security.js';
 import { validatePlanning } from '../validation.js';
 
 export default {
   async fetch(request, env) {
     const path=new URL(request.url).pathname;
-    if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.07',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!env.DB});
+    if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.08',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!env.DB});
+    if(path.startsWith('/calendar/')) {
+      if(!env.DB) return new Response('Service indisponible.',{status:503});
+      return await serveCalendar(request,env,path);
+    }
     if(!path.startsWith('/api/')&&path!=='/scan') return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found',{status:404});
     try {
       if(!env.DB) throw new HttpError(503,'La base de comptes n’est pas encore configurée.');
       if(!['GET','HEAD'].includes(request.method)) checkOrigin(request);
       if(path.startsWith('/api/auth/')) return await authRoute(request,env,path);
       const session=await getSession(request,env);
+      if(path.startsWith('/api/calendar/')) return await calendarApi(request,env,path,session);
       if((path==='/scan'||path==='/api/scan')&&request.method==='POST') return await scan(request,env,session);
       if(path==='/api/planning') {
         if(request.method==='GET') {
