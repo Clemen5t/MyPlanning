@@ -1,6 +1,6 @@
-# Mise en service de MyPlanning v0.07
+# Mise en service de MyPlanning v0.08
 
-La v0.07 utilise désormais le même principe de compte que Disney Wait / MagicWait :
+La v0.08 utilise désormais le même principe de compte que Disney Wait / MagicWait :
 **identifiant + mot de passe, sans email et sans confirmation email**.
 
 Le Worker Cloudflare gère l’authentification et D1 stocke les comptes, sessions et
@@ -40,7 +40,7 @@ binding: DB
 ```
 
 La base a été initialisée avant le changement d’architecture avec l’ancien schéma
-email/Supabase, qui n’a jamais été publié. Avant la première mise en ligne v0.07,
+email/Supabase, qui n’a jamais été publié. Avant la première mise en ligne v0.08,
 appliquer **une seule fois** le contenu de :
 
 ```text
@@ -124,3 +124,16 @@ ne sont pas stockées dans D1 ; elles sont transmises à Groq pour analyse.
 
 Le projet Supabase créé pendant les essais n’est pas utilisé et peut rester vide
 ou être mis en pause séparément. Il ne doit fournir aucune clé à MyPlanning.
+
+
+## Calendrier iPhone v0.08
+
+Avant de déployer la v0.08 sur une base D1 déjà en production, appliquer une seule fois :
+
+```text
+worker/migrations/0003_calendar_feeds.sql
+```
+
+Cette migration est additive et crée uniquement `calendar_feeds`. Elle ne modifie ni les comptes ni les plannings existants.
+
+Après déploiement, vérifier qu’un utilisateur connecté peut créer un lien dans Réglages → Calendrier iPhone, que le lien `/calendar/<jeton>.ics` renvoie `text/calendar`, puis que la révocation rend le lien inutilisable.
