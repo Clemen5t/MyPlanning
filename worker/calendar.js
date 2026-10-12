@@ -4,6 +4,20 @@ import { validatePlanning } from '../validation.js';
 const TOKEN_RE=/^[a-f0-9]{64}$/;
 const FEED_RE=/^\/calendar\/([a-f0-9]{64})\.ics$/;
 const TYPE_LABELS={work:'Travail',rest:'Repos',leave:'Congé',sick:'Arrêt',training:'Formation'};
+let schemaReady=false;
+async function ensureCalendarSchema(env){
+  if(schemaReady)return;
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS calendar_feeds (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS calendar_feeds_token ON calendar_feeds(token_hash)')
+  ]);
+  schemaReady=true;
+}
 
 function icsEscape(value){
   return String(value??'')
@@ -102,6 +116,7 @@ async function buildIcs(row){
 }
 
 export async function calendarApi(request,env,path,session){
+  await ensureCalendarSchema(env);
   if(path==='/api/calendar/status'&&request.method==='GET'){
     const row=await env.DB.prepare('SELECT 1 AS active FROM calendar_feeds WHERE user_id=?').bind(session.id).first();
     return json({ok:true,active:!!row});
@@ -122,6 +137,7 @@ export async function calendarApi(request,env,path,session){
 }
 
 export async function serveCalendar(request,env,path){
+  await ensureCalendarSchema(env);
   if(!['GET','HEAD'].includes(request.method))return new Response('Méthode non autorisée.',{status:405,headers:{Allow:'GET, HEAD'}});
   const match=path.match(FEED_RE);if(!match||!TOKEN_RE.test(match[1]))return response404();
   const tokenHash=await hash(match[1]);
