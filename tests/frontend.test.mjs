@@ -38,7 +38,7 @@ test('UI registration, immediate session, reload, profile, logout and second acc
   for(const [id,value] of Object.entries({displayName:'Marie',username:'ui-marie',password:PASS,passwordConfirm:PASS}))fill(p,id,value);
   submit(p,'authForm');
   await waitFor(()=>p.doc.querySelector('.day')&&!p.doc.getElementById('main').classList.contains('hidden'));
-  assert.equal(p.doc.getElementById('appVersion').textContent,'v0.07');
+  assert.equal(p.doc.getElementById('appVersion').textContent,'v0.08');
   assert.ok(!p.doc.body.textContent.includes('Email'));
 
   p.doc.getElementById('quickAdd').click();fill(p,'noteInput','Planning privé de Marie');p.doc.getElementById('saveEntry').click();
@@ -101,4 +101,19 @@ test('a photo still being read cannot be sent or displayed after logout',async()
   assert.ok(reader);p.doc.getElementById('closeScanner').click();p.doc.querySelector('[data-tab="settings"]').click();p.doc.getElementById('logout').click();await waitFor(()=>p.doc.getElementById('identifier'));
   const before=h.external.calls.length;reader.result='data:image/jpeg;base64,AQID';reader.onload();await new Promise(r=>setTimeout(r,30));
   assert.equal(h.external.calls.length,before);assert.equal(p.doc.getElementById('scanPreview').getAttribute('src'),'');
+});
+
+
+test('iPhone Calendar subscription can be created and revoked from settings',async()=>{
+  const c=h.client();await h.signUp(c,'ui-calendar');
+  const p=await page({cookie:c.cookie});await waitFor(()=>p.doc.querySelector('.day'));
+  p.doc.querySelector('[data-tab="settings"]').click();
+  await waitFor(()=>p.doc.getElementById('calendarSyncStatus')?.textContent.includes('non configurée'));
+  p.doc.getElementById('calendarSyncCreate').click();
+  await waitFor(()=>!p.doc.getElementById('calendarInstall').classList.contains('hidden'));
+  const link=p.doc.getElementById('calendarOpen');
+  assert.ok(link.getAttribute('href').startsWith('webcal://'));
+  assert.ok(p.doc.getElementById('calendarCopy').dataset.url.startsWith('https://app.example/calendar/'));
+  p.doc.getElementById('calendarSyncRevoke').click();
+  await waitFor(()=>p.doc.getElementById('calendarSyncStatus').textContent.includes('désactivée'));
 });
