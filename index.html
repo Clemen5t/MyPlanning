@@ -31,7 +31,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.07</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
+  <header class="top"><div class="brand"><b>MyPlanning</b><span>Ton planning personnel · <strong id="appVersion">v0.08</strong></span></div><div class="badge" id="headerTarget">25 h / sem.</div></header>
   <div id="authRoot"></div><div id="syncStatus" class="note hidden" role="status" aria-live="polite"></div><main id="main" class="hidden"></main>
 </div>
 <nav class="nav hidden">
@@ -55,7 +55,7 @@ button,input,select,textarea{font:inherit}.app{max-width:960px;margin:auto;paddi
   <div class="handle"></div>
   <div class="sheet-head"><div><small style="color:var(--muted)">IMPORT PHOTO</small><h2>Scanner mon planning</h2></div><button class="close" id="closeScanner">✕</button></div>
   <div class="field" style="margin-top:14px"><label>Nom / prénom tel qu'il apparaît sur le planning</label><input id="scanName" placeholder="Ex. CLEMENT"></div>
-  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.07 : scanner IA serveur — la photo est analysée par Groq Vision via Cloudflare, puis tu valides les horaires avant import.</div>
+  <div class="field" style="margin-top:10px"><label>Un jour de la semaine photographiée</label><input id="scanWeekDate" type="date"></div><div class="note" style="padding:8px 2px 0">v0.08 : scanner IA serveur — la photo est analysée par Groq Vision via Cloudflare, puis tu valides les horaires avant import.</div>
   <div class="actions" style="margin-top:12px"><button class="btn primary" id="takePhoto">📷 Prendre une photo</button><button class="btn" id="pickPhoto">🖼️ Importer une photo</button></div>
   <img id="scanPreview" class="scan-preview hidden" alt="Aperçu du planning">
   <div id="scanStatus" class="scan-status">Prends une photo bien droite, avec toute la ligne de ton nom et les jours visibles.</div>

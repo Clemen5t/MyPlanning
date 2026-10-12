@@ -11,7 +11,7 @@ command = "npm run build"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/scan", "/health"]
+run_worker_first = ["/api/*", "/calendar/*", "/scan", "/health"]
 
 [[d1_databases]]
 binding = "DB"

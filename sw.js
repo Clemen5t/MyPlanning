@@ -1,5 +1,5 @@
-// v0.07: remove old catch-all caches, never cache private API responses.
-const CACHE='myplanning-v007-public';
+// v0.08: remove old catch-all caches, never cache private API responses.
+const CACHE='myplanning-v008-public';
 const PUBLIC=['./icon.svg','./manifest.webmanifest'];
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(

@@ -1,4 +1,4 @@
-# Worker MyPlanning v0.07
+# Worker MyPlanning v0.08
 
 Le Worker `myplanning` sert l’application, les comptes, les plannings privés et
 le scanner Groq.
@@ -26,3 +26,10 @@ Données privées :
 
 Le seul secret externe requis est `GROQ_API_KEY`. Voir
 [DEPLOYMENT.md](../DEPLOYMENT.md).
+
+
+Calendrier iPhone :
+- `GET /api/calendar/status`
+- `POST /api/calendar/create`
+- `POST /api/calendar/revoke`
+- `GET /calendar/<jeton>.ics` (abonnement privé, jeton révocable)

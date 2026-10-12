@@ -68,7 +68,7 @@ function offerLegacyImport(){
   };
 }
 function showLegacyGateway(){
-  document.getElementById('headerTarget').textContent='v0.07';
+  document.getElementById('headerTarget').textContent='v0.08';
   var box=document.getElementById('authRoot');
   box.innerHTML='<section class="card auth-card"><h1>Ton planning a maintenant un compte</h1><p>MyPlanning continue sur son adresse sécurisée Cloudflare, avec la même interface.</p><p>Si tu utilisais cette ancienne adresse, exporte d’abord ton planning. Sur le nouveau site, crée ton compte puis ouvre Réglages → Restaurer JSON.</p><div class="actions"><button class="btn" id="exportLegacy">Exporter mon ancien planning</button><a class="btn primary" href="https://myplanning.v76y74m25h.workers.dev/">Ouvrir MyPlanning</a><button class="ghost" id="eraseLegacy">Effacer la copie locale</button></div><p id="legacyMessage" role="status"></p></section>';
   document.getElementById('exportLegacy').onclick=function(){try{var raw=localStorage.getItem(KEY);if(!raw)throw new Error('Aucun ancien planning trouvé dans ce navigateur.');var data=validatePlanning(JSON.parse(raw));download('myplanning-migration.json',JSON.stringify(data,null,2),'application/json');document.getElementById('legacyMessage').textContent='Sauvegarde exportée. Conserve-la jusqu’à la réussite de l’import.';}catch(e){document.getElementById('legacyMessage').textContent=e.message;}};
@@ -131,12 +131,62 @@ function renderStats(){
   rows.forEach(function(r){h+='<div class="barcol"><b>'+Math.round(r.m/60)+'h</b><div class="bar"><i style="height:'+Math.max(3,r.m/max*100)+'%"></i></div>'+months[r.d.getMonth()].slice(0,3)+'</div>'});h+='</div></section><div class="section-title">Historique 6 mois</div><section class="card">';
   rows.slice().reverse().forEach(function(r){h+='<div style="display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)"><span>'+months[r.d.getMonth()]+' '+r.d.getFullYear()+'</span><b>'+fmt(r.m)+'</b></div>'});h+='</section>';document.getElementById('main').innerHTML=h;
 }
+async function refreshCalendarSync(){
+  var status=document.getElementById('calendarSyncStatus'),create=document.getElementById('calendarSyncCreate'),revoke=document.getElementById('calendarSyncRevoke');
+  if(!status||!auth.user)return;
+  status.textContent='Vérification de la synchronisation…';
+  try{
+    var result=await auth.api('/api/calendar/status');
+    if(!document.getElementById('calendarSyncStatus'))return;
+    status.textContent=result.active?'Synchronisation active. Les changements de MyPlanning seront repris par Calendrier lors de sa prochaine actualisation.':'Synchronisation non configurée.';
+    create.textContent=result.active?'Créer un nouveau lien':'Synchroniser avec Calendrier iPhone';
+    revoke.classList.toggle('hidden',!result.active);
+  }catch(e){status.textContent='Impossible de vérifier la synchronisation : '+e.message;}
+}
+async function createCalendarSync(){
+  var status=document.getElementById('calendarSyncStatus'),install=document.getElementById('calendarInstall'),create=document.getElementById('calendarSyncCreate');
+  if(!status||!install)return;
+  if(!document.getElementById('calendarSyncRevoke').classList.contains('hidden')&&!confirm('Créer un nouveau lien désactivera l’ancien abonnement Calendrier. Continuer ?'))return;
+  create.disabled=true;status.textContent='Création du lien privé…';
+  try{
+    var result=await auth.api('/api/calendar/create',{method:'POST',body:{}});
+    var open=document.getElementById('calendarOpen'),copy=document.getElementById('calendarCopy');
+    open.href=result.webcalUrl;open.dataset.https=result.httpsUrl;copy.dataset.url=result.httpsUrl;
+    install.classList.remove('hidden');
+    status.textContent='Lien créé. Sur ton iPhone, appuie sur « Ouvrir Calendrier », puis confirme l’abonnement.';
+    create.textContent='Créer un nouveau lien';document.getElementById('calendarSyncRevoke').classList.remove('hidden');
+  }catch(e){status.textContent='Synchronisation impossible : '+e.message;}
+  finally{create.disabled=false;}
+}
+async function revokeCalendarSync(){
+  if(!confirm('Désactiver le lien Calendrier ? Le calendrier déjà ajouté sur l’iPhone ne recevra plus les mises à jour.'))return;
+  var status=document.getElementById('calendarSyncStatus'),button=document.getElementById('calendarSyncRevoke');
+  button.disabled=true;
+  try{
+    await auth.api('/api/calendar/revoke',{method:'POST',body:{}});
+    document.getElementById('calendarInstall').classList.add('hidden');
+    status.textContent='Synchronisation désactivée.';
+    document.getElementById('calendarSyncCreate').textContent='Synchroniser avec Calendrier iPhone';
+    button.classList.add('hidden');
+  }catch(e){status.textContent='Impossible de désactiver la synchronisation : '+e.message;}
+  finally{button.disabled=false;}
+}
+async function copyCalendarLink(){
+  var button=document.getElementById('calendarCopy'),url=button?.dataset.url;
+  if(!url)return;
+  try{await navigator.clipboard.writeText(url);toast('Lien Calendrier copié');}
+  catch{window.prompt('Copie ce lien privé dans Réglages → Calendrier → Ajouter un calendrier avec abonnement :',url);}
+}
 function renderSettings(){
-  var s=state.data.settings,h='<div class="section-title">Réglages</div><section class="settings card"><div class="field"><label>Nom du planning</label><input id="employeeLabel" value="'+escapeHtml(s.employeeLabel)+'"></div><div class="field"><label>Objectif hebdomadaire (heures)</label><input id="weeklyTarget" type="number" min="0" step="0.25" value="'+(s.weeklyTargetMinutes/60)+'"></div><div class="field"><label>Taux horaire brut (€) — optionnel</label><input id="hourlyRate" type="number" min="0" step="0.01" value="'+s.hourlyRateGross+'"></div><div class="field"><label>Nom sur le planning papier (pour le scanner)</label><input id="ocrEmployeeName" value="'+escapeHtml(s.ocrEmployeeName||'')+'" placeholder="Ex. CLEMENT"></div><button class="btn primary" id="saveSettings">Enregistrer les réglages</button><div class="section-title" style="margin:10px 0 0">Données</div><div class="actions"><button class="btn" id="exportIcs">Exporter calendrier .ics</button><button class="btn" id="exportJson">Sauvegarde JSON</button><button class="btn" id="importJson">Restaurer JSON</button></div><div class="note">Tes horaires sont privés et enregistrés dans ton compte. Une connexion internet est nécessaire pour les charger et les sauvegarder. Les photos du scanner sont transmises à Groq pour analyse.</div></section>';
+  var s=state.data.settings,h='<div class="section-title">Réglages</div><section class="settings card"><div class="field"><label>Nom du planning</label><input id="employeeLabel" value="'+escapeHtml(s.employeeLabel)+'"></div><div class="field"><label>Objectif hebdomadaire (heures)</label><input id="weeklyTarget" type="number" min="0" step="0.25" value="'+(s.weeklyTargetMinutes/60)+'"></div><div class="field"><label>Taux horaire brut (€) — optionnel</label><input id="hourlyRate" type="number" min="0" step="0.01" value="'+s.hourlyRateGross+'"></div><div class="field"><label>Nom sur le planning papier (pour le scanner)</label><input id="ocrEmployeeName" value="'+escapeHtml(s.ocrEmployeeName||'')+'" placeholder="Ex. CLEMENT"></div><button class="btn primary" id="saveSettings">Enregistrer les réglages</button><div class="section-title" style="margin:10px 0 0">Calendrier iPhone</div><div style="padding:14px;background:#0d1627;border:1px solid var(--line);border-radius:16px"><b>Synchronisation automatique</b><p class="note" style="padding:8px 0">MyPlanning publie un calendrier privé en lecture seule. Tes horaires ajoutés ou modifiés ici apparaîtront dans l’app Calendrier de l’iPhone lors de sa prochaine actualisation.</p><p id="calendarSyncStatus" class="auth-message">Vérification de la synchronisation…</p><div class="actions"><button class="btn primary" id="calendarSyncCreate">Synchroniser avec Calendrier iPhone</button><button class="btn danger hidden" id="calendarSyncRevoke">Désactiver</button></div><div id="calendarInstall" class="hidden" style="margin-top:12px"><p class="note" style="padding:4px 0">Le lien vient d’être créé. Il n’est affiché qu’ici : si tu le régénères, l’ancien lien est immédiatement révoqué.</p><div class="actions"><a class="btn primary" id="calendarOpen" href="#">📅 Ouvrir Calendrier</a><button class="btn" id="calendarCopy">Copier le lien</button></div></div><p class="note" style="padding:10px 0 0">Ce lien donne accès à ton planning : ne le partage pas. La synchronisation va de MyPlanning vers Calendrier ; modifier un événement dans Calendrier ne modifie pas MyPlanning.</p></div><div class="section-title" style="margin:10px 0 0">Données</div><div class="actions"><button class="btn" id="exportIcs">Exporter calendrier .ics</button><button class="btn" id="exportJson">Sauvegarde JSON</button><button class="btn" id="importJson">Restaurer JSON</button></div><div class="note">Tes horaires sont privés et enregistrés dans ton compte. Une connexion internet est nécessaire pour les charger et les sauvegarder. Les photos du scanner sont transmises à Groq pour analyse.</div></section>';
   document.getElementById('main').innerHTML=h;
   document.getElementById('main').insertAdjacentHTML('afterbegin',auth.profileMarkup());auth.bindProfile();offerLegacyImport();
   document.getElementById('saveSettings').onclick=async function(){state.data.settings.employeeLabel=document.getElementById('employeeLabel').value||'Mon planning';state.data.settings.weeklyTargetMinutes=Math.round((Number(document.getElementById('weeklyTarget').value)||0)*60);state.data.settings.hourlyRateGross=Number(document.getElementById('hourlyRate').value)||0;state.data.settings.ocrEmployeeName=document.getElementById('ocrEmployeeName').value.trim();if(!await persist())return;toast('Réglages enregistrés');render()};
+  document.getElementById('calendarSyncCreate').onclick=createCalendarSync;
+  document.getElementById('calendarSyncRevoke').onclick=revokeCalendarSync;
+  document.getElementById('calendarCopy').onclick=copyCalendarLink;
   document.getElementById('exportJson').onclick=exportJson;document.getElementById('importJson').onclick=function(){document.getElementById('importFile').click()};document.getElementById('exportIcs').onclick=exportIcs;
+  refreshCalendarSync();
 }
 
 var scanDraft=null,scanImageUrl=null,scanGeneration=0;

@@ -1,4 +1,4 @@
-name: Test MyPlanning v0.07
+name: Test MyPlanning v0.08
 on:
   pull_request:
   push:
