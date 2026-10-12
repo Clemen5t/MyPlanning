@@ -104,3 +104,39 @@ test('durable login throttling blocks repeated invalid attempts',async()=>{
   for(let n=0;n<10;n++)assert.equal((await post(c,'login',{identifier:'missing-user',password:PASS})).status,401);
   assert.equal((await post(c,'login',{identifier:'missing-user',password:PASS})).status,429);
 });
+
+
+test('private calendar feed mirrors planning and can be revoked',async()=>{
+  const c=h.client();await h.signUp(c,'calendar-user');
+  const data=defaultPlanning();
+  data.entries=[
+    {date:'2026-10-12',type:'work',note:'Caisse',segments:[{id:'shift-a',start:'13:00',end:'18:30',breakMinutes:30}]},
+    {date:'2026-10-13',type:'rest',note:'Repos',segments:[]}
+  ];
+  assert.equal((await c.request('/api/planning',{method:'PUT',body:{revision:0,data}})).status,200);
+
+  const created=await c.request('/api/calendar/create',{method:'POST',body:{}});
+  assert.equal(created.status,200);
+  assert.ok(created.data.httpsUrl.startsWith('https://app.example/calendar/'));
+  assert.ok(created.data.webcalUrl.startsWith('webcal://app.example/calendar/'));
+  const token=created.data.httpsUrl.match(/\/calendar\/([a-f0-9]{64})\.ics$/)[1];
+  const stored=await h.db.prepare('SELECT token_hash FROM calendar_feeds WHERE user_id=(SELECT id FROM users WHERE username=?)').bind('calendar-user').first();
+  assert.notEqual(stored.token_hash,token);
+
+  const feed=await h.mf.dispatchFetch(created.data.httpsUrl);
+  assert.equal(feed.status,200);
+  assert.match(feed.headers.get('content-type'),/^text\/calendar/);
+  const ics=await feed.text();
+  assert.ok(ics.includes('X-WR-CALNAME:MyPlanning'));
+  assert.ok(ics.includes('DTSTART;TZID=Europe/Paris:20261012T130000'));
+  assert.ok(ics.includes('DTEND;TZID=Europe/Paris:20261012T183000'));
+  assert.ok(ics.includes('SUMMARY:Travail'));
+  assert.ok(ics.includes('DESCRIPTION:Caisse\\nPause : 30 min'));
+  assert.ok(ics.includes('DTSTART;VALUE=DATE:20261013'));
+  assert.ok(ics.includes('SUMMARY:Repos'));
+
+  assert.equal((await c.request('/api/calendar/status')).data.active,true);
+  assert.equal((await c.request('/api/calendar/revoke',{method:'POST',body:{}})).status,200);
+  assert.equal((await c.request('/api/calendar/status')).data.active,false);
+  assert.equal((await h.mf.dispatchFetch(created.data.httpsUrl)).status,404);
+});
