@@ -9,8 +9,12 @@ export default {
     const path=new URL(request.url).pathname;
     if(path==='/health'&&request.method==='GET') return json({ok:true,service:'MyPlanning',version:'0.08',vision:'Groq',groq_secret:!!env.GROQ_API_KEY,auth_configured:!!env.DB});
     if(path.startsWith('/calendar/')) {
-      if(!env.DB) return new Response('Service indisponible.',{status:503});
-      return await serveCalendar(request,env,path);
+      try {
+        if(!env.DB) throw new HttpError(503,'Service indisponible.');
+        return await serveCalendar(request,env,path);
+      } catch {
+        return new Response('Erreur serveur.',{status:500,headers:{'Content-Type':'text/plain; charset=UTF-8','Cache-Control':'no-store'}});
+      }
     }
     if(!path.startsWith('/api/')&&path!=='/scan') return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found',{status:404});
     try {
