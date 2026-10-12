@@ -128,12 +128,12 @@ ou être mis en pause séparément. Il ne doit fournir aucune clé à MyPlanning
 
 ## Calendrier iPhone v0.08
 
-Avant de déployer la v0.08 sur une base D1 déjà en production, appliquer une seule fois :
+Le Worker crée automatiquement la table d’abonnement lors de la première utilisation. La migration reste aussi disponible pour les déploiements administrés :
 
 ```text
 worker/migrations/0003_calendar_feeds.sql
 ```
 
-Cette migration est additive et crée uniquement `calendar_feeds`. Elle ne modifie ni les comptes ni les plannings existants.
+Cette migration est additive et crée uniquement `calendar_feeds`. Elle ne modifie ni les comptes ni les plannings existants. Il n’est donc pas nécessaire d’exécuter manuellement du SQL pour la mise à jour v0.08.
 
 Après déploiement, vérifier qu’un utilisateur connecté peut créer un lien dans Réglages → Calendrier iPhone, que le lien `/calendar/<jeton>.ics` renvoie `text/calendar`, puis que la révocation rend le lien inutilisable.
